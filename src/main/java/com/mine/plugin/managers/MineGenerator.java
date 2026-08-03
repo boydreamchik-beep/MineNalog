@@ -13,21 +13,27 @@ import java.util.Random;
 
 /**
  * ИЗМЕНЕНИЯ:
- * - Y координата: 42 (на 1 ниже, было 43)
- * - Моментальная генерация (задержка = 1 тик, минимально возможная)
+ * - Добавлен второй генератор справа от первого
+ * - Оба работают независимо
+ * - Моментальная генерация на обоих
  */
 public class MineGenerator implements Listener {
 
     private final MinePlugin plugin;
     private final Random random = new Random();
 
-    // Координаты генератора (Y на 1 ниже = 42)
-    private static final int GEN_X = -231;
-    private static final int GEN_Y = 42;      // ← ИЗМЕНЕНО: было 43
-    private static final int GEN_Z = -68;
+    // ======= Генератор 1 (левый) =======
+    private static final int GEN1_X = -231;
+    private static final int GEN1_Y = 42;
+    private static final int GEN1_Z = -68;
 
-    // Моментальная генерация (1 тик = 0.05 сек)
-    private static final long REGEN_DELAY_TICKS = 1L;  // ← ИЗМЕНЕНО: было 40
+    // ======= Генератор 2 (правый, на 1 блок правее) =======
+    private static final int GEN2_X = -230;   // ← справа от первого
+    private static final int GEN2_Y = 42;
+    private static final int GEN2_Z = -68;
+
+    // Моментальная генерация
+    private static final long REGEN_DELAY_TICKS = 1L;
 
     // Блоки которые генерируются
     private static final Material[] GENERATOR_BLOCKS = {
@@ -43,23 +49,34 @@ public class MineGenerator implements Listener {
         this.plugin = plugin;
     }
 
+    /**
+     * Запуск обоих генераторов
+     */
     public void start() {
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            generateBlock();
-            plugin.getLogger().info("Генератор шахты запущен: "
-                    + GEN_X + ", " + GEN_Y + ", " + GEN_Z);
+            generateBlock(GEN1_X, GEN1_Y, GEN1_Z);
+            generateBlock(GEN2_X, GEN2_Y, GEN2_Z);
+            plugin.getLogger().info("Генератор 1: " + GEN1_X + ", " + GEN1_Y + ", " + GEN1_Z);
+            plugin.getLogger().info("Генератор 2: " + GEN2_X + ", " + GEN2_Y + ", " + GEN2_Z);
         }, 60L);
     }
 
-    private void generateBlock() {
-        Block block = getGeneratorBlock();
-        if (block == null) return;
+    /**
+     * Генерирует случайный блок на указанных координатах
+     */
+    private void generateBlock(int x, int y, int z) {
+        World world = getWorld();
+        if (world == null) return;
 
+        Block block = world.getBlockAt(x, y, z);
         Material randomBlock = GENERATOR_BLOCKS[random.nextInt(GENERATOR_BLOCKS.length)];
         block.setType(randomBlock);
     }
 
-    private Block getGeneratorBlock() {
+    /**
+     * Получить мир
+     */
+    private World getWorld() {
         World world;
         if (worldName != null) {
             world = Bukkit.getWorld(worldName);
@@ -68,25 +85,50 @@ public class MineGenerator implements Listener {
         }
         if (world == null) {
             plugin.getLogger().warning("Мир не найден для генератора!");
-            return null;
         }
-        return world.getBlockAt(GEN_X, GEN_Y, GEN_Z);
+        return world;
     }
 
-    private boolean isGeneratorBlock(Block block) {
-        return block.getX() == GEN_X
-                && block.getY() == GEN_Y
-                && block.getZ() == GEN_Z;
+    /**
+     * Проверяет, является ли блок одним из генераторов
+     * Возвращает номер генератора (1 или 2) или 0 если не генератор
+     */
+    private int getGeneratorId(Block block) {
+        int x = block.getX();
+        int y = block.getY();
+        int z = block.getZ();
+
+        if (x == GEN1_X && y == GEN1_Y && z == GEN1_Z) {
+            return 1;
+        }
+        if (x == GEN2_X && y == GEN2_Y && z == GEN2_Z) {
+            return 2;
+        }
+        return 0;
     }
 
+    /**
+     * При разрушении блока генератора — моментально создаём новый
+     */
     @EventHandler
     public void onBlockBreak(BlockBreakEvent event) {
         if (event.isCancelled()) return;
-        Block block = event.getBlock();
-        if (!isGeneratorBlock(block)) return;
 
-        // Моментальная генерация
-        Bukkit.getScheduler().runTaskLater(plugin, this::generateBlock, REGEN_DELAY_TICKS);
+        Block block = event.getBlock();
+        int genId = getGeneratorId(block);
+
+        if (genId == 0) return; // Не генератор
+
+        // Моментальная генерация на том же месте
+        if (genId == 1) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                generateBlock(GEN1_X, GEN1_Y, GEN1_Z);
+            }, REGEN_DELAY_TICKS);
+        } else {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                generateBlock(GEN2_X, GEN2_Y, GEN2_Z);
+            }, REGEN_DELAY_TICKS);
+        }
     }
 
     public void setWorldName(String worldName) {
