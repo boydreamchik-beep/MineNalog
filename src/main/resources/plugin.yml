@@ -1,8 +1,8 @@
 name: MinePlugin
-version: 2.0.0
+version: 3.0.0
 main: com.mine.plugin.MinePlugin
 api-version: '1.21'
-description: Шахта с уровнями, налогами, казной, магазином и табло
+description: Шахта, казна, магазин, кредиты, паспорт
 
 commands:
   kazna:
@@ -13,6 +13,14 @@ commands:
     description: Открыть магазин ресурсов
     usage: /buy
     permission: mine.buy
+  credit:
+    description: Кредитная система
+    usage: /credit <take|info|pay> [сумма]
+    permission: mine.credit
+  passport:
+    description: Получить паспорт гражданина
+    usage: /passport [Фамилия] [Имя] [Отчество]
+    permission: mine.passport
 
 permissions:
   mine.kazna:
@@ -23,4 +31,10 @@ permissions:
     default: true
   mine.buy:
     description: Доступ к магазину
+    default: true
+  mine.credit:
+    description: Доступ к кредитам
+    default: true
+  mine.passport:
+    description: Получение паспорта
     default: true
