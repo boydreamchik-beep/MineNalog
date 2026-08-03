@@ -13,7 +13,7 @@ commands:
 permissions:
   mine.kazna:
     description: Доступ к казне
-    default: op
+    default: true              # ← ИЗМЕНЕНО: было op, стало true
   mine.use:
     description: Использование шахты
     default: true
