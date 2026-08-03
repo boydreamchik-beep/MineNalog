@@ -6,13 +6,16 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Маркерный InventoryHolder для идентификации наших GUI.
- * Это надёжнее чем сравнение заголовков через строки.
+ * 
+ * ИЗМЕНЕНИЕ: Добавлен тип ALREADY_IN_MINE для окна
+ * "вы уже в шахте"
  */
 public class MineInventoryHolder implements InventoryHolder {
 
     public enum GUIType {
-        MINE_LEVEL_SELECT,
-        KAZNA_VIEW
+        MINE_LEVEL_SELECT,     // Выбор уровня шахты
+        KAZNA_VIEW,            // Просмотр казны
+        ALREADY_IN_MINE        // ➕ НОВЫЙ: Окно "вы уже в шахте"
     }
 
     private final GUIType type;
@@ -27,7 +30,6 @@ public class MineInventoryHolder implements InventoryHolder {
 
     @Override
     public @NotNull Inventory getInventory() {
-        // Не используется, но обязателен для интерфейса
         return null;
     }
 }
