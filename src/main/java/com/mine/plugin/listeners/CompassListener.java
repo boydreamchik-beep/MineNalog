@@ -16,7 +16,6 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
@@ -24,23 +23,21 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Обрабатывает компас шахтёра:
- * - ПКМ компасом = выход из шахты
- * - Нельзя выбросить компас
- * - Нельзя переместить компас в инвентаре
- * - Компас удаляется при выходе из шахты
+ * ИЗМЕНЕНИЯ:
+ * - giveCompass() теперь НЕ заменяет предмет в 9 слоте
+ * - Сначала сохраняет предмет из слота 8, потом ставит компас
+ * - Если слот 8 занят — предмет перемещается в первый свободный слот
+ * - Если инвентарь полон — предмет дропается на землю
  */
 public class CompassListener implements Listener {
 
     private final MinePlugin plugin;
     private final MineLevelGUI mineLevelGUI;
 
-    // Координаты точки выхода (точка входа в шахту)
     private static final double EXIT_X = -231.477;
     private static final double EXIT_Y = 59.0;
     private static final double EXIT_Z = -46.454;
 
-    // Уникальное название компаса для идентификации
     public static final String COMPASS_NAME = "Выход из шахты";
 
     public CompassListener(MinePlugin plugin, MineLevelGUI mineLevelGUI) {
@@ -86,7 +83,6 @@ public class CompassListener implements Listener {
         if (meta == null) return false;
         if (!meta.hasDisplayName()) return false;
 
-        // Проверяем по plain text
         String displayName = net.kyori.adventure.text.serializer.plain
                 .PlainTextComponentSerializer.plainText()
                 .serialize(meta.displayName());
@@ -95,11 +91,38 @@ public class CompassListener implements Listener {
     }
 
     /**
-     * Выдать компас игроку
+     * Выдать компас игроку БЕЗ ПОТЕРИ предмета в 9 слоте.
+     * 
+     * ИЗМЕНЕНИЕ:
+     * - Если слот 8 (9-й слот хотбара) занят — сохраняем предмет
+     * - Предмет перемещается в первый свободный слот
+     * - Если нет свободного — дропается на землю
+     * - Компас ставится в слот 8
      */
     public static void giveCompass(Player player) {
         ItemStack compass = createMineCompass();
-        player.getInventory().setItem(8, compass); // Слот 9 (индекс 8) — последний в хотбаре
+        ItemStack existingItem = player.getInventory().getItem(8);
+
+        if (existingItem != null && existingItem.getType() != Material.AIR) {
+            // Слот 8 занят — перемещаем предмет в свободный слот
+            int freeSlot = player.getInventory().firstEmpty();
+
+            if (freeSlot != -1) {
+                // Есть свободный слот — перемещаем туда
+                player.getInventory().setItem(freeSlot, existingItem.clone());
+            } else {
+                // Инвентарь полон — дропаем на землю
+                player.getWorld().dropItemNaturally(
+                        player.getLocation(), existingItem.clone());
+                player.sendMessage(Component.text("[Шахта] ")
+                        .color(NamedTextColor.DARK_GREEN)
+                        .append(Component.text("Инвентарь полон! Предмет из 9 слота выброшен.")
+                                .color(NamedTextColor.YELLOW)));
+            }
+        }
+
+        // Теперь ставим компас в слот 8
+        player.getInventory().setItem(8, compass);
     }
 
     /**
@@ -132,10 +155,8 @@ public class CompassListener implements Listener {
         event.setCancelled(true);
 
         UUID uuid = player.getUniqueId();
-
         if (!mineLevelGUI.isPlayerInMine(uuid)) return;
 
-        // Выход из шахты
         performExit(player);
     }
 
@@ -145,19 +166,11 @@ public class CompassListener implements Listener {
     public void performExit(Player player) {
         UUID uuid = player.getUniqueId();
 
-        // Убираем из шахтёров
         mineLevelGUI.removePlayerFromMine(uuid);
-
-        // Сбрасываем налоговый счётчик
         plugin.getTaxTracker().reset(uuid);
-
-        // Размораживаем (на всякий случай)
         plugin.getFreezeManager().unfreeze(uuid);
-
-        // Удаляем компас
         removeCompass(player);
 
-        // Телепортируем на точку входа
         Location exitLocation = new Location(
                 player.getWorld(),
                 EXIT_X, EXIT_Y, EXIT_Z
@@ -200,10 +213,9 @@ public class CompassListener implements Listener {
         ItemStack cursor = event.getCursor();
 
         if (isMineCompass(current) || isMineCompass(cursor)) {
-            // Разрешаем только если это наш GUI (обрабатывается в другом listener)
             if (event.getInventory().getHolder() instanceof
                     com.mine.plugin.gui.MineInventoryHolder) {
-                return; // Пусть обработает другой listener
+                return;
             }
             event.setCancelled(true);
         }
@@ -218,9 +230,7 @@ public class CompassListener implements Listener {
         UUID uuid = player.getUniqueId();
 
         if (mineLevelGUI.isPlayerInMine(uuid)) {
-            // Убираем компас из дропа
             event.getDrops().removeIf(CompassListener::isMineCompass);
-
             mineLevelGUI.removePlayerFromMine(uuid);
             plugin.getTaxTracker().reset(uuid);
         }
