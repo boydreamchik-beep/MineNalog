@@ -1,6 +1,7 @@
 package com.mine.plugin.gui;
 
 import com.mine.plugin.MinePlugin;
+import com.mine.plugin.listeners.CompassListener;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -9,8 +10,10 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -22,16 +25,37 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * ИЗМЕНЕНИЯ:
+ * 1. Добавлена заморозка игрока при открытии меню выбора
+ * 2. Окно нельзя закрыть на E или ESC — оно переоткрывается
+ * 3. При выборе уровня — разморозка + выдача компаса
+ * 4. Новый метод openAlreadyInMineMenu() — если игрок уже в шахте
+ *    и наступает на точку входа, показывается окно с кнопкой выхода
+ */
 public class MineLevelGUI implements Listener {
 
     private final MinePlugin plugin;
     private final Set<UUID> playersInMine = new HashSet<>();
 
+    // Игроки, у которых сейчас открыто незакрываемое окно
+    private final Set<UUID> playersInForcedGUI = new HashSet<>();
+
     public MineLevelGUI(MinePlugin plugin) {
         this.plugin = plugin;
     }
 
+    // =========================================================
+    //  МЕНЮ ВЫБОРА УРОВНЯ (для новых игроков, не в шахте)
+    // =========================================================
+
     public void openMenu(Player player) {
+        UUID uuid = player.getUniqueId();
+
+        // Замораживаем игрока
+        plugin.getFreezeManager().freeze(player);
+        playersInForcedGUI.add(uuid);
+
         MineInventoryHolder holder = new MineInventoryHolder(
                 MineInventoryHolder.GUIType.MINE_LEVEL_SELECT);
 
@@ -40,13 +64,13 @@ public class MineLevelGUI implements Listener {
                         .color(NamedTextColor.DARK_GREEN)
                         .decoration(TextDecoration.BOLD, true));
 
-        // === Декоративное стекло ===
-        ItemStack glass = createGlassPane();
+        // Декоративное стекло
+        ItemStack glass = createGlassPane(Material.BLACK_STAINED_GLASS_PANE);
         for (int i = 0; i < 27; i++) {
             gui.setItem(i, glass);
         }
 
-        // === Заголовок (слот 4) ===
+        // Заголовок (слот 4)
         ItemStack info = new ItemStack(Material.GOLD_BLOCK);
         ItemMeta infoMeta = info.getItemMeta();
         infoMeta.displayName(Component.text("ГОСУДАРСТВЕННАЯ ШАХТА")
@@ -58,11 +82,14 @@ public class MineLevelGUI implements Listener {
         infoLore.add(Component.text("Выберите уровень шахты")
                 .color(NamedTextColor.GRAY)
                 .decoration(TextDecoration.ITALIC, false));
+        infoLore.add(Component.text("Окно нельзя закрыть без выбора!")
+                .color(NamedTextColor.RED)
+                .decoration(TextDecoration.ITALIC, false));
         infoMeta.lore(infoLore);
         info.setItemMeta(infoMeta);
         gui.setItem(4, info);
 
-        // === Уровень 1 (слот 11) ===
+        // Уровень 1 (слот 11)
         ItemStack level1 = new ItemStack(Material.IRON_PICKAXE);
         ItemMeta meta1 = level1.getItemMeta();
         meta1.displayName(Component.text("Уровень 1")
@@ -89,16 +116,10 @@ public class MineLevelGUI implements Listener {
         lore1.add(Component.text("  остаются как есть")
                 .color(NamedTextColor.GRAY)
                 .decoration(TextDecoration.ITALIC, false));
-        lore1.add(Component.text("- Прочие блоки превращаются")
+        lore1.add(Component.text("- Прочие блоки -> булыжник")
                 .color(NamedTextColor.GRAY)
                 .decoration(TextDecoration.ITALIC, false));
-        lore1.add(Component.text("  в булыжник")
-                .color(NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false));
-        lore1.add(Component.text("- Ценные руды полностью")
-                .color(NamedTextColor.GOLD)
-                .decoration(TextDecoration.ITALIC, false));
-        lore1.add(Component.text("  уходят в казну города")
+        lore1.add(Component.text("- Ценные руды -> казна")
                 .color(NamedTextColor.GOLD)
                 .decoration(TextDecoration.ITALIC, false));
         lore1.add(Component.empty());
@@ -110,7 +131,7 @@ public class MineLevelGUI implements Listener {
         level1.setItemMeta(meta1);
         gui.setItem(11, level1);
 
-        // === Уровень 2 (слот 15) ===
+        // Уровень 2 (слот 15)
         ItemStack level2 = new ItemStack(Material.BARRIER);
         ItemMeta meta2 = level2.getItemMeta();
         meta2.displayName(Component.text("Уровень 2")
@@ -132,68 +153,273 @@ public class MineLevelGUI implements Listener {
         level2.setItemMeta(meta2);
         gui.setItem(15, level2);
 
+        // Кнопка "Уйти" (слот 22) — размораживает и закрывает
+        ItemStack exitBtn = new ItemStack(Material.DARK_OAK_DOOR);
+        ItemMeta exitMeta = exitBtn.getItemMeta();
+        exitMeta.displayName(Component.text("Уйти")
+                .color(NamedTextColor.GRAY)
+                .decoration(TextDecoration.BOLD, true)
+                .decoration(TextDecoration.ITALIC, false));
+        List<Component> exitLore = new ArrayList<>();
+        exitLore.add(Component.empty());
+        exitLore.add(Component.text("Не заходить в шахту")
+                .color(NamedTextColor.DARK_GRAY)
+                .decoration(TextDecoration.ITALIC, false));
+        exitMeta.lore(exitLore);
+        exitBtn.setItemMeta(exitMeta);
+        gui.setItem(22, exitBtn);
+
         player.openInventory(gui);
     }
+
+    // =========================================================
+    //  МЕНЮ "ВЫ УЖЕ В ШАХТЕ" (если игрок в шахте и наступил
+    //  на точку входа снова)
+    // =========================================================
+
+    public void openAlreadyInMineMenu(Player player) {
+        UUID uuid = player.getUniqueId();
+
+        plugin.getFreezeManager().freeze(player);
+        playersInForcedGUI.add(uuid);
+
+        MineInventoryHolder holder = new MineInventoryHolder(
+                MineInventoryHolder.GUIType.ALREADY_IN_MINE);
+
+        Inventory gui = Bukkit.createInventory(holder, 27,
+                Component.text("Вы уже в шахте!")
+                        .color(NamedTextColor.RED)
+                        .decoration(TextDecoration.BOLD, true));
+
+        // Декоративное стекло
+        ItemStack glass = createGlassPane(Material.RED_STAINED_GLASS_PANE);
+        for (int i = 0; i < 27; i++) {
+            gui.setItem(i, glass);
+        }
+
+        // Информация (слот 4)
+        ItemStack info = new ItemStack(Material.BARRIER);
+        ItemMeta infoMeta = info.getItemMeta();
+        infoMeta.displayName(Component.text("Нельзя выбрать уровень!")
+                .color(NamedTextColor.RED)
+                .decoration(TextDecoration.BOLD, true)
+                .decoration(TextDecoration.ITALIC, false));
+        List<Component> infoLore = new ArrayList<>();
+        infoLore.add(Component.empty());
+        infoLore.add(Component.text("Вы уже находитесь в шахте!")
+                .color(NamedTextColor.GRAY)
+                .decoration(TextDecoration.ITALIC, false));
+        infoLore.add(Component.text("Сначала выйдите из шахты,")
+                .color(NamedTextColor.GRAY)
+                .decoration(TextDecoration.ITALIC, false));
+        infoLore.add(Component.text("чтобы выбрать другой уровень.")
+                .color(NamedTextColor.GRAY)
+                .decoration(TextDecoration.ITALIC, false));
+        infoMeta.lore(infoLore);
+        info.setItemMeta(infoMeta);
+        gui.setItem(4, info);
+
+        // Кнопка "Выйти из шахты" (слот 13)
+        ItemStack exitBtn = new ItemStack(Material.DARK_OAK_DOOR);
+        ItemMeta exitMeta = exitBtn.getItemMeta();
+        exitMeta.displayName(Component.text("Выйти из шахты")
+                .color(NamedTextColor.GREEN)
+                .decoration(TextDecoration.BOLD, true)
+                .decoration(TextDecoration.ITALIC, false));
+        List<Component> exitLore = new ArrayList<>();
+        exitLore.add(Component.empty());
+        exitLore.add(Component.text("Нажмите чтобы выйти из шахты")
+                .color(NamedTextColor.GRAY)
+                .decoration(TextDecoration.ITALIC, false));
+        exitLore.add(Component.text("и вернуться на поверхность")
+                .color(NamedTextColor.GRAY)
+                .decoration(TextDecoration.ITALIC, false));
+        exitMeta.lore(exitLore);
+        exitBtn.setItemMeta(exitMeta);
+        gui.setItem(13, exitBtn);
+
+        player.openInventory(gui);
+    }
+
+    // =========================================================
+    //  ОБРАБОТКА КЛИКОВ
+    // =========================================================
 
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         if (event.getInventory().getHolder() == null) return;
         if (!(event.getInventory().getHolder() instanceof MineInventoryHolder holder)) return;
-        if (holder.getType() != MineInventoryHolder.GUIType.MINE_LEVEL_SELECT) return;
 
-        event.setCancelled(true);
+        UUID uuid = player.getUniqueId();
 
-        int slot = event.getRawSlot();
+        // ========== Меню выбора уровня ==========
+        if (holder.getType() == MineInventoryHolder.GUIType.MINE_LEVEL_SELECT) {
+            event.setCancelled(true);
 
-        if (slot == 11) {
-            // === Уровень 1 ===
-            player.closeInventory();
+            int slot = event.getRawSlot();
 
-            Location mineLocation = new Location(
-                    player.getWorld(),
-                    -229.601, 43.0, -70.282
-            );
-            mineLocation.setYaw(player.getLocation().getYaw());
-            mineLocation.setPitch(player.getLocation().getPitch());
-            player.teleport(mineLocation);
+            if (slot == 11) {
+                // === Уровень 1 выбран ===
+                playersInForcedGUI.remove(uuid);
+                plugin.getFreezeManager().unfreeze(player);
+                player.closeInventory();
 
-            playersInMine.add(player.getUniqueId());
+                // Телепорт
+                Location mineLocation = new Location(
+                        player.getWorld(),
+                        -229.601, 43.0, -70.282
+                );
+                mineLocation.setYaw(player.getLocation().getYaw());
+                mineLocation.setPitch(player.getLocation().getPitch());
+                player.teleport(mineLocation);
 
-            // Сбрасываем счётчик налогов
-            plugin.getTaxTracker().reset(player.getUniqueId());
+                // Добавляем в список шахтёров
+                playersInMine.add(uuid);
 
-            player.sendMessage(Component.empty());
-            player.sendMessage(Component.text("==============================")
-                    .color(NamedTextColor.DARK_GREEN));
-            player.sendMessage(Component.text(" Вы спустились на 1 уровень шахты!")
-                    .color(NamedTextColor.GREEN)
-                    .decoration(TextDecoration.BOLD, true));
-            player.sendMessage(Component.text(" Высота: Y = 43")
-                    .color(NamedTextColor.GRAY));
-            player.sendMessage(Component.text(" Налог: каждый 5-й блок (20%)")
-                    .color(NamedTextColor.RED));
-            player.sendMessage(Component.text(" Ценные руды -> казна города")
-                    .color(NamedTextColor.GOLD));
-            player.sendMessage(Component.text(" Прочие блоки -> булыжник")
-                    .color(NamedTextColor.YELLOW));
-            player.sendMessage(Component.text("==============================")
-                    .color(NamedTextColor.DARK_GREEN));
-            player.sendMessage(Component.empty());
+                // Сбрасываем счётчик налогов
+                plugin.getTaxTracker().reset(uuid);
 
-        } else if (slot == 15) {
-            // === Уровень 2 ===
-            player.sendMessage(Component.text("Уровень 2 находится в разработке!")
-                    .color(NamedTextColor.RED));
+                // Выдаём компас
+                CompassListener.giveCompass(player);
+
+                player.sendMessage(Component.empty());
+                player.sendMessage(Component.text("==============================")
+                        .color(NamedTextColor.DARK_GREEN));
+                player.sendMessage(Component.text(" Вы спустились на 1 уровень шахты!")
+                        .color(NamedTextColor.GREEN)
+                        .decoration(TextDecoration.BOLD, true));
+                player.sendMessage(Component.text(" Высота: Y = 43")
+                        .color(NamedTextColor.GRAY));
+                player.sendMessage(Component.text(" Налог: каждый 5-й блок (20%)")
+                        .color(NamedTextColor.RED));
+                player.sendMessage(Component.text(" Ценные руды -> казна города")
+                        .color(NamedTextColor.GOLD));
+                player.sendMessage(Component.text(" Компас (слот 9) — выход из шахты")
+                        .color(NamedTextColor.AQUA));
+                player.sendMessage(Component.text("==============================")
+                        .color(NamedTextColor.DARK_GREEN));
+                player.sendMessage(Component.empty());
+
+            } else if (slot == 15) {
+                // === Уровень 2 — в разработке ===
+                player.sendMessage(Component.text("Уровень 2 находится в разработке!")
+                        .color(NamedTextColor.RED));
+
+            } else if (slot == 22) {
+                // === Кнопка "Уйти" ===
+                playersInForcedGUI.remove(uuid);
+                plugin.getFreezeManager().unfreeze(player);
+                player.closeInventory();
+
+                player.sendMessage(Component.text("Вы решили не заходить в шахту.")
+                        .color(NamedTextColor.GRAY));
+            }
+            return;
+        }
+
+        // ========== Меню "уже в шахте" ==========
+        if (holder.getType() == MineInventoryHolder.GUIType.ALREADY_IN_MINE) {
+            event.setCancelled(true);
+
+            int slot = event.getRawSlot();
+
+            if (slot == 13) {
+                // === Кнопка "Выйти из шахты" ===
+                playersInForcedGUI.remove(uuid);
+                plugin.getFreezeManager().unfreeze(player);
+                player.closeInventory();
+
+                // Используем метод выхода из CompassListener
+                // Но так как у нас нет прямой ссылки, делаем выход здесь
+                performMineExit(player);
+            }
         }
     }
+
+    // =========================================================
+    //  ЗАПРЕТ ЗАКРЫТИЯ ОКНА (E или ESC)
+    //  Окно переоткрывается через 1 тик
+    // =========================================================
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) return;
+
+        UUID uuid = player.getUniqueId();
+
+        // Если игрок в списке "принудительного GUI" — переоткрываем
+        if (!playersInForcedGUI.contains(uuid)) return;
+
+        if (event.getInventory().getHolder() == null) return;
+        if (!(event.getInventory().getHolder() instanceof MineInventoryHolder holder)) return;
+
+        MineInventoryHolder.GUIType type = holder.getType();
+
+        // Переоткрываем через 1 тик (нельзя открыть инвентарь внутри события закрытия)
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!player.isOnline()) return;
+            if (!playersInForcedGUI.contains(uuid)) return;
+
+            if (type == MineInventoryHolder.GUIType.MINE_LEVEL_SELECT) {
+                openMenu(player);
+            } else if (type == MineInventoryHolder.GUIType.ALREADY_IN_MINE) {
+                openAlreadyInMineMenu(player);
+            }
+        }, 1L);
+    }
+
+    // =========================================================
+    //  ВЫХОД ИЗ ШАХТЫ
+    // =========================================================
+
+    private void performMineExit(Player player) {
+        UUID uuid = player.getUniqueId();
+
+        playersInMine.remove(uuid);
+        plugin.getTaxTracker().reset(uuid);
+        plugin.getFreezeManager().unfreeze(uuid);
+
+        // Удаляем компас
+        CompassListener.removeCompass(player);
+
+        // Телепорт на поверхность
+        Location exitLocation = new Location(
+                player.getWorld(),
+                -231.477, 59.0, -46.454
+        );
+        exitLocation.setYaw(player.getLocation().getYaw());
+        exitLocation.setPitch(player.getLocation().getPitch());
+        player.teleport(exitLocation);
+
+        player.sendMessage(Component.empty());
+        player.sendMessage(Component.text("==============================")
+                .color(NamedTextColor.GREEN));
+        player.sendMessage(Component.text(" Вы вышли из шахты!")
+                .color(NamedTextColor.GREEN)
+                .decoration(TextDecoration.BOLD, true));
+        player.sendMessage(Component.text("==============================")
+                .color(NamedTextColor.GREEN));
+        player.sendMessage(Component.empty());
+    }
+
+    // =========================================================
+    //  СОБЫТИЯ ВЫХОДА ИГРОКА
+    // =========================================================
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         UUID uuid = event.getPlayer().getUniqueId();
         playersInMine.remove(uuid);
+        playersInForcedGUI.remove(uuid);
         plugin.getTaxTracker().reset(uuid);
+        plugin.getFreezeManager().unfreeze(uuid);
+        CompassListener.removeCompass(event.getPlayer());
     }
+
+    // =========================================================
+    //  ГЕТТЕРЫ
+    // =========================================================
 
     public boolean isPlayerInMine(UUID uuid) {
         return playersInMine.contains(uuid);
@@ -201,14 +427,19 @@ public class MineLevelGUI implements Listener {
 
     public void removePlayerFromMine(UUID uuid) {
         playersInMine.remove(uuid);
+        playersInForcedGUI.remove(uuid);
     }
 
     public Set<UUID> getPlayersInMine() {
         return playersInMine;
     }
 
-    private ItemStack createGlassPane() {
-        ItemStack glass = new ItemStack(Material.BLACK_STAINED_GLASS_PANE);
+    // =========================================================
+    //  УТИЛИТЫ
+    // =========================================================
+
+    private ItemStack createGlassPane(Material material) {
+        ItemStack glass = new ItemStack(material);
         ItemMeta meta = glass.getItemMeta();
         meta.displayName(Component.text(" "));
         glass.setItemMeta(meta);
