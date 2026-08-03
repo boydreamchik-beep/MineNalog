@@ -14,21 +14,23 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * ИЗМЕНЕНИЯ:
+ * 1. MineLevelGUI и TaxTracker передаются через конструктор
+ *    (больше не используется ненадёжный HandlerList)
+ * 2. Без других изменений логики
+ */
 public class MineBlockBreakListener implements Listener {
 
     private final MinePlugin plugin;
     private final MineLevelGUI mineLevelGUI;
     private final TaxTracker taxTracker;
 
-    /*
-     * Границы зоны шахты уровня 1.
-     * ВАЖНО: Настрой эти координаты под свою карту!
-     * Шахта должна полностью попадать в эти рамки.
-     */
+    // Границы зоны шахты уровня 1
+    // ВАЖНО: Настрой под свою карту!
     private static final double MINE_MIN_X = -280.0;
     private static final double MINE_MAX_X = -180.0;
     private static final double MINE_MIN_Y = 30.0;
@@ -48,12 +50,10 @@ public class MineBlockBreakListener implements Listener {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        // Проверяем: игрок в шахте?
         if (!mineLevelGUI.isPlayerInMine(uuid)) {
             return;
         }
 
-        // Проверяем: блок внутри зоны шахты?
         double bx = event.getBlock().getX();
         double by = event.getBlock().getY();
         double bz = event.getBlock().getZ();
@@ -69,9 +69,7 @@ public class MineBlockBreakListener implements Listener {
         // Отменяем стандартный дроп
         event.setDropItems(false);
 
-        // ==========================================
-        // СЛУЧАЙ 1: Ценные руды -> полностью в казну
-        // ==========================================
+        // ===== СЛУЧАЙ 1: Ценные руды -> полностью в казну =====
         if (TaxUtils.isTreasuryOre(brokenBlock)) {
             plugin.getKaznaManager().addItem(brokenBlock, 1);
 
@@ -84,26 +82,18 @@ public class MineBlockBreakListener implements Listener {
             return;
         }
 
-        // ==========================================
-        // СЛУЧАЙ 2 и 3: Обычные блоки с налогом 20%
-        // ==========================================
-
-        // Определяем что получит игрок
+        // ===== СЛУЧАЙ 2 и 3: Обычные блоки с налогом 20% =====
         Material resultMaterial;
 
         if (TaxUtils.isAllowedMaterial(brokenBlock)) {
-            // Булыжник, диорит, андезит — остаются как есть
             resultMaterial = brokenBlock;
         } else {
-            // Всё остальное — превращается в булыжник
             resultMaterial = Material.COBBLESTONE;
         }
 
-        // Проверяем налог (каждый 5-й блок)
         boolean isTaxBlock = taxTracker.incrementAndCheckTax(uuid);
 
         if (isTaxBlock) {
-            // Этот блок — налог, уходит в казну
             plugin.getKaznaManager().addItem(resultMaterial, 1);
 
             player.sendMessage(Component.text("[Налог] ")
@@ -115,21 +105,17 @@ public class MineBlockBreakListener implements Listener {
                     .append(Component.text(")")
                             .color(NamedTextColor.GRAY)));
         } else {
-            // Блок достаётся игроку
             Map<Integer, ItemStack> overflow = player.getInventory()
                     .addItem(new ItemStack(resultMaterial, 1));
 
-            // Если инвентарь полон — дропаем на землю
             if (!overflow.isEmpty()) {
                 for (ItemStack item : overflow.values()) {
                     player.getWorld().dropItemNaturally(player.getLocation(), item);
                 }
             }
 
-            // Если блок был сконвертирован — уведомляем (но не спамим)
             if (!TaxUtils.isAllowedMaterial(brokenBlock)
                     && brokenBlock != Material.COBBLESTONE) {
-                // Показываем только в ActionBar чтобы не спамить чат
                 player.sendActionBar(Component.text(
                                 TaxUtils.getRussianName(brokenBlock) + " -> Булыжник")
                         .color(NamedTextColor.YELLOW));
