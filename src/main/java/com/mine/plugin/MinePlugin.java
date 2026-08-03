@@ -2,18 +2,28 @@ package com.mine.plugin;
 
 import com.mine.plugin.commands.KaznaCommand;
 import com.mine.plugin.gui.MineLevelGUI;
+import com.mine.plugin.listeners.CompassListener;
 import com.mine.plugin.listeners.MineBlockBreakListener;
 import com.mine.plugin.listeners.MineEntryListener;
+import com.mine.plugin.managers.FreezeManager;
 import com.mine.plugin.managers.KaznaManager;
 import com.mine.plugin.managers.TaxTracker;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
+/**
+ * ИЗМЕНЕНИЯ:
+ * 1. Добавлен FreezeManager
+ * 2. Добавлен CompassListener
+ * 3. getFreezeManager() — новый геттер
+ */
 public class MinePlugin extends JavaPlugin {
 
     private static MinePlugin instance;
     private KaznaManager kaznaManager;
     private MineLevelGUI mineLevelGUI;
     private TaxTracker taxTracker;
+    private FreezeManager freezeManager;  // ➕ НОВОЕ
 
     @Override
     public void onEnable() {
@@ -28,22 +38,24 @@ public class MinePlugin extends JavaPlugin {
         kaznaManager.load();
 
         taxTracker = new TaxTracker();
+        freezeManager = new FreezeManager(this);  // ➕ НОВОЕ
 
         // Инициализация GUI
         mineLevelGUI = new MineLevelGUI(this);
 
         // Регистрация слушателей
-        getServer().getPluginManager().registerEvents(
-                new MineEntryListener(this, mineLevelGUI), this);
-        getServer().getPluginManager().registerEvents(
-                new MineBlockBreakListener(this, mineLevelGUI, taxTracker), this);
-        getServer().getPluginManager().registerEvents(mineLevelGUI, this);
+        PluginManager pm = getServer().getPluginManager();
+        pm.registerEvents(freezeManager, this);           // ➕ НОВОЕ
+        pm.registerEvents(mineLevelGUI, this);
+        pm.registerEvents(new MineEntryListener(this, mineLevelGUI), this);
+        pm.registerEvents(new MineBlockBreakListener(this, mineLevelGUI, taxTracker), this);
+        pm.registerEvents(new CompassListener(this, mineLevelGUI), this);  // ➕ НОВОЕ
 
         // Регистрация команд
         KaznaCommand kaznaCommand = new KaznaCommand(this);
         getCommand("kazna").setExecutor(kaznaCommand);
         getCommand("kazna").setTabCompleter(kaznaCommand);
-        getServer().getPluginManager().registerEvents(kaznaCommand, this);
+        pm.registerEvents(kaznaCommand, this);
 
         getLogger().info("=================================");
         getLogger().info("MinePlugin v1.0.0 загружен!");
@@ -73,5 +85,10 @@ public class MinePlugin extends JavaPlugin {
 
     public TaxTracker getTaxTracker() {
         return taxTracker;
+    }
+
+    // ➕ НОВОЕ
+    public FreezeManager getFreezeManager() {
+        return freezeManager;
     }
 }
