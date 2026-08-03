@@ -1,0 +1,77 @@
+package com.mine.plugin;
+
+import com.mine.plugin.commands.KaznaCommand;
+import com.mine.plugin.gui.MineLevelGUI;
+import com.mine.plugin.listeners.MineBlockBreakListener;
+import com.mine.plugin.listeners.MineEntryListener;
+import com.mine.plugin.managers.KaznaManager;
+import com.mine.plugin.managers.TaxTracker;
+import org.bukkit.plugin.java.JavaPlugin;
+
+public class MinePlugin extends JavaPlugin {
+
+    private static MinePlugin instance;
+    private KaznaManager kaznaManager;
+    private MineLevelGUI mineLevelGUI;
+    private TaxTracker taxTracker;
+
+    @Override
+    public void onEnable() {
+        instance = this;
+
+        if (!getDataFolder().exists()) {
+            getDataFolder().mkdirs();
+        }
+
+        // Инициализация менеджеров
+        kaznaManager = new KaznaManager(this);
+        kaznaManager.load();
+
+        taxTracker = new TaxTracker();
+
+        // Инициализация GUI
+        mineLevelGUI = new MineLevelGUI(this);
+
+        // Регистрация слушателей
+        getServer().getPluginManager().registerEvents(
+                new MineEntryListener(this, mineLevelGUI), this);
+        getServer().getPluginManager().registerEvents(
+                new MineBlockBreakListener(this, mineLevelGUI, taxTracker), this);
+        getServer().getPluginManager().registerEvents(mineLevelGUI, this);
+
+        // Регистрация команд
+        KaznaCommand kaznaCommand = new KaznaCommand(this);
+        getCommand("kazna").setExecutor(kaznaCommand);
+        getCommand("kazna").setTabCompleter(kaznaCommand);
+        getServer().getPluginManager().registerEvents(kaznaCommand, this);
+
+        getLogger().info("=================================");
+        getLogger().info("MinePlugin v1.0.0 загружен!");
+        getLogger().info("Шахта активна. Казна готова.");
+        getLogger().info("=================================");
+    }
+
+    @Override
+    public void onDisable() {
+        if (kaznaManager != null) {
+            kaznaManager.save();
+        }
+        getLogger().info("MinePlugin выгружен. Казна сохранена.");
+    }
+
+    public static MinePlugin getInstance() {
+        return instance;
+    }
+
+    public KaznaManager getKaznaManager() {
+        return kaznaManager;
+    }
+
+    public MineLevelGUI getMineLevelGUI() {
+        return mineLevelGUI;
+    }
+
+    public TaxTracker getTaxTracker() {
+        return taxTracker;
+    }
+}
