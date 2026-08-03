@@ -1,0 +1,19 @@
+name: MinePlugin
+version: 1.0.0
+main: com.mine.plugin.MinePlugin
+api-version: '1.21'
+description: Шахта с уровнями, налогами и казной города
+
+commands:
+  kazna:
+    description: Открыть казну города
+    usage: /kazna
+    permission: mine.kazna
+
+permissions:
+  mine.kazna:
+    description: Доступ к казне
+    default: op
+  mine.use:
+    description: Использование шахты
+    default: true
