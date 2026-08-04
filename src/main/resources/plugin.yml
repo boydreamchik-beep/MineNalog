@@ -1,8 +1,8 @@
 name: MinePlugin
-version: 3.0.0
+version: 4.0.0
 main: com.mine.plugin.MinePlugin
 api-version: '1.21'
-description: Шахта, казна, магазин, кредиты, паспорт
+description: Шахта, казна, магазин, кредиты, паспорт. Всё через конфиги.
 
 commands:
   kazna:
@@ -21,6 +21,10 @@ commands:
     description: Получить паспорт гражданина
     usage: /passport [Фамилия] [Имя] [Отчество]
     permission: mine.passport
+  minereload:
+    description: Перезагрузить конфиг плагина
+    usage: /minereload
+    permission: mine.admin
 
 permissions:
   mine.kazna:
@@ -38,3 +42,6 @@ permissions:
   mine.passport:
     description: Получение паспорта
     default: true
+  mine.admin:
+    description: Админ-команды плагина
+    default: op
