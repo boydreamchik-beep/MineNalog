@@ -55,29 +55,58 @@ public class KaznaManager {
         save();
     }
 
-    public int getAmount(Material m) { return kaznaItems.getOrDefault(m, 0); }
-    public Map<Material, Integer> getAllItems() { return new HashMap<>(kaznaItems); }
-    public int getTotalItemCount() { return kaznaItems.values().stream().mapToInt(Integer::intValue).sum(); }
+    public int getAmount(Material m) {
+        return kaznaItems.getOrDefault(m, 0);
+    }
 
+    public Map<Material, Integer> getAllItems() {
+        return new HashMap<>(kaznaItems);
+    }
+
+    public int getTotalItemCount() {
+        return kaznaItems.values().stream().mapToInt(Integer::intValue).sum();
+    }
+
+    /**
+     * Количество страниц (по стакам — каждый предмет раскладывается в ячейки по 64)
+     */
     public int getMaxPages() {
         int perPage = plugin.getConfigManager().getKaznaItemsPerPage();
         int maxPages = plugin.getConfigManager().getKaznaMaxPages();
-        int totalTypes = kaznaItems.size();
-        if (totalTypes == 0) return 1;
-        return Math.min((int) Math.ceil((double) totalTypes / perPage), maxPages);
+
+        int totalStacks = 0;
+        for (int amount : kaznaItems.values()) {
+            totalStacks += (int) Math.ceil((double) amount / 64);
+        }
+
+        if (totalStacks == 0) return 1;
+        return Math.min((int) Math.ceil((double) totalStacks / perPage), maxPages);
     }
 
-    public Map<Material, Integer> getItemsForPage(int page) {
+    /**
+     * Получить предметы для страницы, разбитые на стаки по 64.
+     * Каждый элемент списка = одна ячейка в GUI.
+     */
+    public List<Map.Entry<Material, Integer>> getItemsForPage(int page) {
         int perPage = plugin.getConfigManager().getKaznaItemsPerPage();
-        Map<Material, Integer> pageItems = new LinkedHashMap<>();
-        var all = new ArrayList<>(kaznaItems.entrySet());
-        int start = page * perPage;
-        int end = Math.min(start + perPage, all.size());
-        if (start >= all.size()) return pageItems;
-        for (int i = start; i < end; i++) {
-            var e = all.get(i);
-            pageItems.put(e.getKey(), e.getValue());
+
+        List<Map.Entry<Material, Integer>> allStacks = new ArrayList<>();
+
+        // Разбиваем все предметы на стаки по 64
+        for (var entry : kaznaItems.entrySet()) {
+            int amount = entry.getValue();
+            while (amount > 0) {
+                int stackSize = Math.min(amount, 64);
+                allStacks.add(Map.entry(entry.getKey(), stackSize));
+                amount -= stackSize;
+            }
         }
-        return pageItems;
+
+        // Вырезаем нужную страницу
+        int start = page * perPage;
+        int end = Math.min(start + perPage, allStacks.size());
+
+        if (start >= allStacks.size()) return new ArrayList<>();
+        return new ArrayList<>(allStacks.subList(start, end));
     }
 }
