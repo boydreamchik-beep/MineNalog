@@ -23,8 +23,16 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.text.SimpleDateFormat;
 import java.util.*;
 
+/**
+ * /property           — открыть меню имущества
+ * /property pay <сумма> — оплатить рассрочку
+ * /property pay all    — оплатить всю рассрочку
+ * /property info       — информация о рассрочке
+ * /property tax        — оплатить земельный налог
+ */
 public class PropertyCommand implements CommandExecutor, TabCompleter, Listener {
 
     private final MinePlugin plugin;
@@ -40,9 +48,218 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
             sender.sendMessage("Только для игроков!");
             return true;
         }
-        openPropertyMenu(player);
+
+        if (args.length == 0) {
+            openPropertyMenu(player);
+            return true;
+        }
+
+        String sub = args[0].toLowerCase();
+
+        switch (sub) {
+            case "pay" -> handlePay(player, args);
+            case "info" -> handleInfo(player);
+            case "tax" -> handleTax(player);
+            default -> openPropertyMenu(player);
+        }
+
         return true;
     }
+
+    // === ОПЛАТА РАССРОЧКИ ===
+
+    private void handlePay(Player player, String[] args) {
+        if (args.length < 2) {
+            player.sendMessage(Component.text("[Рассрочка] /property pay <сумма> или /property pay all")
+                    .color(NamedTextColor.RED));
+            return;
+        }
+
+        PropertyManager pm = plugin.getPropertyManager();
+        UUID uuid = player.getUniqueId();
+
+        if (!pm.hasAnyInstallment(uuid)) {
+            player.sendMessage(Component.text("[Рассрочка] У вас нет активной рассрочки!")
+                    .color(NamedTextColor.GREEN));
+            return;
+        }
+
+        int amount;
+
+        if (args[1].equalsIgnoreCase("all")) {
+            amount = pm.getInstallment(uuid).remaining;
+        } else {
+            try {
+                if (args[1].toLowerCase().endsWith("s")) {
+                    int stacks = Integer.parseInt(args[1].substring(0, args[1].length() - 1));
+                    amount = stacks * 64;
+                } else {
+                    amount = Integer.parseInt(args[1]);
+                }
+            } catch (NumberFormatException e) {
+                player.sendMessage(Component.text("[Рассрочка] Неверная сумма!")
+                        .color(NamedTextColor.RED));
+                return;
+            }
+        }
+
+        PropertyManager.PayInstallmentResult result = pm.payInstallment(player, amount);
+
+        switch (result) {
+            case SUCCESS -> {
+                PropertyManager.InstallmentData data = pm.getInstallment(uuid);
+
+                if (data == null) {
+                    player.sendMessage(Component.empty());
+                    player.sendMessage(Component.text("╔══════════════════════════════╗")
+                            .color(NamedTextColor.GREEN));
+                    player.sendMessage(Component.text("║  РАССРОЧКА ПОЛНОСТЬЮ ПОГАШЕНА!")
+                            .color(NamedTextColor.GREEN)
+                            .decoration(TextDecoration.BOLD, true));
+                    player.sendMessage(Component.text("║  Участок теперь полностью ваш!")
+                            .color(NamedTextColor.WHITE));
+                    player.sendMessage(Component.text("╚══════════════════════════════╝")
+                            .color(NamedTextColor.GREEN));
+                    player.sendMessage(Component.empty());
+
+                    plugin.getPassportManager().updateResidence(uuid, "Участок №1");
+                } else {
+                    player.sendMessage(Component.text("[Рассрочка] Оплачено! Остаток: "
+                                    + data.remaining + " булыжников")
+                            .color(NamedTextColor.GREEN));
+                }
+            }
+            case NOT_ENOUGH -> {
+                player.sendMessage(Component.text("[Рассрочка] Не хватает булыжника!")
+                        .color(NamedTextColor.RED));
+                int cobbleInv = 0;
+                for (ItemStack item : player.getInventory().getContents()) {
+                    if (item != null && item.getType() == Material.COBBLESTONE) {
+                        cobbleInv += item.getAmount();
+                    }
+                }
+                int cobbleContainers = ChestScanner.countInNearbyContainers(player, Material.COBBLESTONE);
+                player.sendMessage(Component.text("[Рассрочка] У вас: " + (cobbleInv + cobbleContainers)
+                                + " (инвентарь: " + cobbleInv + ", сундуки: " + cobbleContainers + ")")
+                        .color(NamedTextColor.GRAY));
+            }
+            case NO_INSTALLMENT -> {
+                player.sendMessage(Component.text("[Рассрочка] У вас нет рассрочки!")
+                        .color(NamedTextColor.GREEN));
+            }
+            case INVALID_AMOUNT -> {
+                player.sendMessage(Component.text("[Рассрочка] Неверная сумма!")
+                        .color(NamedTextColor.RED));
+            }
+        }
+    }
+
+    // === ИНФОРМАЦИЯ О РАССРОЧКЕ ===
+
+    private void handleInfo(Player player) {
+        PropertyManager pm = plugin.getPropertyManager();
+        UUID uuid = player.getUniqueId();
+
+        if (!pm.hasAnyInstallment(uuid)) {
+            player.sendMessage(Component.text("[Рассрочка] У вас нет активной рассрочки.")
+                    .color(NamedTextColor.GREEN));
+            return;
+        }
+
+        PropertyManager.InstallmentData data = pm.getInstallment(uuid);
+        SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+        long now = System.currentTimeMillis();
+        boolean overdue = now > data.dueDate;
+
+        player.sendMessage(Component.empty());
+        player.sendMessage(Component.text("╔══════════════════════════════╗")
+                .color(NamedTextColor.GOLD));
+        player.sendMessage(Component.text("║  ИНФОРМАЦИЯ О РАССРОЧКЕ")
+                .color(NamedTextColor.GOLD)
+                .decoration(TextDecoration.BOLD, true));
+        player.sendMessage(Component.text("║")
+                .color(NamedTextColor.GOLD));
+        player.sendMessage(Component.text("║  Участок: " + data.plotId)
+                .color(NamedTextColor.WHITE));
+        player.sendMessage(Component.text("║  Координаты: " + pm.getPlotCoordinates(data.plotId))
+                .color(NamedTextColor.GRAY));
+        player.sendMessage(Component.text("║  Стоимость: " + data.totalCost + " булыж.")
+                .color(NamedTextColor.YELLOW));
+        player.sendMessage(Component.text("║  Оплачено: " + (data.totalCost - data.remaining))
+                .color(NamedTextColor.GREEN));
+        player.sendMessage(Component.text("║  Остаток: " + data.remaining + " булыж.")
+                .color(NamedTextColor.RED));
+        player.sendMessage(Component.text("║  Срок: " + data.termDays + " игр. дней")
+                .color(NamedTextColor.AQUA));
+        player.sendMessage(Component.text("║  Начало: " + sdf.format(new Date(data.startDate)))
+                .color(NamedTextColor.GRAY));
+        player.sendMessage(Component.text("║  Срок до: " + sdf.format(new Date(data.dueDate)))
+                .color(overdue ? NamedTextColor.RED : NamedTextColor.GRAY));
+
+        if (overdue) {
+            player.sendMessage(Component.text("║  ⚠ ПРОСРОЧЕНА! +3%/игр.день")
+                    .color(NamedTextColor.RED)
+                    .decoration(TextDecoration.BOLD, true));
+        } else {
+            long remaining = data.dueDate - now;
+            long minutes = remaining / (1000 * 60);
+            long hours = minutes / 60;
+            player.sendMessage(Component.text("║  Осталось: " + hours + "ч " + (minutes % 60) + "мин")
+                    .color(NamedTextColor.GREEN));
+        }
+
+        player.sendMessage(Component.text("║")
+                .color(NamedTextColor.GOLD));
+        player.sendMessage(Component.text("║  /property pay <сумма>")
+                .color(NamedTextColor.WHITE));
+        player.sendMessage(Component.text("║  /property pay all")
+                .color(NamedTextColor.WHITE));
+        player.sendMessage(Component.text("╚══════════════════════════════╝")
+                .color(NamedTextColor.GOLD));
+        player.sendMessage(Component.empty());
+    }
+
+    // === ЗЕМЕЛЬНЫЙ НАЛОГ ===
+
+    private void handleTax(Player player) {
+        PropertyManager pm = plugin.getPropertyManager();
+        UUID uuid = player.getUniqueId();
+
+        if (!pm.hasAnyPlot(uuid)) {
+            player.sendMessage(Component.text("[Налог] У вас нет земельного участка!")
+                    .color(NamedTextColor.RED));
+            return;
+        }
+
+        boolean success = pm.payLandTax(player);
+
+        if (success) {
+            player.sendMessage(Component.empty());
+            player.sendMessage(Component.text("╔══════════════════════════════╗")
+                    .color(NamedTextColor.GREEN));
+            player.sendMessage(Component.text("║  ЗЕМЕЛЬНЫЙ НАЛОГ ОПЛАЧЕН!")
+                    .color(NamedTextColor.GREEN)
+                    .decoration(TextDecoration.BOLD, true));
+            player.sendMessage(Component.text("║  Списано: " + PropertyManager.LAND_TAX_AMOUNT + " булыж.")
+                    .color(NamedTextColor.YELLOW));
+            player.sendMessage(Component.text("║  (2 стака)")
+                    .color(NamedTextColor.GRAY));
+            player.sendMessage(Component.text("╚══════════════════════════════╝")
+                    .color(NamedTextColor.GREEN));
+            player.sendMessage(Component.empty());
+        } else {
+            if (!pm.hasAnyPlot(uuid)) {
+                player.sendMessage(Component.text("[Налог] У вас нет земли!")
+                        .color(NamedTextColor.RED));
+            } else {
+                player.sendMessage(Component.text("[Налог] Не хватает булыжника! Нужно: "
+                                + PropertyManager.LAND_TAX_AMOUNT)
+                        .color(NamedTextColor.RED));
+            }
+        }
+    }
+
+    // === GUI МЕНЮ ===
 
     public void openPropertyMenu(Player player) {
         MineInventoryHolder holder = new MineInventoryHolder(MineInventoryHolder.GUIType.PROPERTY_MENU);
@@ -57,7 +274,14 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
         for (int i = 0; i < 27; i++) gui.setItem(i, glass);
 
         UUID uuid = player.getUniqueId();
-        int totalCobble = ChestScanner.countTotalMaterial(player, Material.COBBLESTONE);
+
+        // Баланс — ТОЛЬКО булыжник в инвентаре
+        int cobbleInInventory = 0;
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && item.getType() == Material.COBBLESTONE) {
+                cobbleInInventory += item.getAmount();
+            }
+        }
 
         // Заголовок
         ItemStack info = new ItemStack(Material.GOLD_BLOCK);
@@ -66,7 +290,7 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                 .decoration(TextDecoration.BOLD, true).decoration(TextDecoration.ITALIC, false));
         im.lore(List.of(
                 Component.empty(),
-                Component.text("Ваш баланс: " + totalCobble + " булыж.")
+                Component.text("Булыжник в инвентаре: " + cobbleInInventory)
                         .color(NamedTextColor.WHITE).decoration(TextDecoration.ITALIC, false)
         ));
         info.setItemMeta(im);
@@ -96,68 +320,91 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
         String plotId = "plot-1";
         boolean isSold = plugin.getPropertyManager().isPlotSold(plotId);
         boolean isMine = plugin.getPropertyManager().hasPlot(uuid, plotId);
+        PropertyManager propMgr = plugin.getPropertyManager();
+        String coords = propMgr.getPlotCoordinates(plotId);
 
         ItemStack plot;
-        ItemMeta pm;
+        ItemMeta plotMeta;
 
         if (isMine) {
-            // Мой участок
             plot = new ItemStack(Material.LIME_CONCRETE);
-            pm = plot.getItemMeta();
-            pm.displayName(Component.text("Участок №1 (ВАШ)").color(NamedTextColor.GREEN)
-                    .decoration(TextDecoration.BOLD, true).decoration(TextDecoration.ITALIC, false));
-            pm.lore(List.of(
-                    Component.empty(),
-                    Component.text("Этот участок принадлежит вам")
-                            .color(NamedTextColor.GRAY)
-                            .decoration(TextDecoration.ITALIC, false),
-                    Component.empty(),
-                    Component.text("Координаты: -239, 67, -64")
-                            .color(NamedTextColor.DARK_GRAY)
-                            .decoration(TextDecoration.ITALIC, false)
-            ));
-        } else if (isSold) {
-            // Продан другому
-            plot = new ItemStack(Material.RED_CONCRETE);
-            pm = plot.getItemMeta();
-            pm.displayName(Component.text("Участок №1 (ПРОДАН)").color(NamedTextColor.RED)
+            plotMeta = plot.getItemMeta();
+            plotMeta.displayName(Component.text("Участок №1 (ВАШ)").color(NamedTextColor.GREEN)
                     .decoration(TextDecoration.BOLD, true).decoration(TextDecoration.ITALIC, false));
 
-            UUID ownerUuid = plugin.getPropertyManager().getPlotOwner(plotId);
+            List<Component> lore = new ArrayList<>();
+            lore.add(Component.empty());
+            lore.add(Component.text("Этот участок принадлежит вам")
+                    .color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.empty());
+            lore.add(Component.text("Координаты:").color(NamedTextColor.YELLOW)
+                    .decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.text(coords).color(NamedTextColor.DARK_GRAY)
+                    .decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.empty());
+            lore.add(Component.text("Земельный налог: 2 стака / 3 дня")
+                    .color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.text("/property tax — оплатить")
+                    .color(NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false));
+
+            if (propMgr.hasAnyInstallment(uuid)) {
+                PropertyManager.InstallmentData inst = propMgr.getInstallment(uuid);
+                lore.add(Component.empty());
+                lore.add(Component.text("Рассрочка: " + inst.remaining + " булыж. осталось")
+                        .color(NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false));
+                lore.add(Component.text("/property pay <сумма>")
+                        .color(NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false));
+            }
+
+            plotMeta.lore(lore);
+
+        } else if (isSold) {
+            plot = new ItemStack(Material.RED_CONCRETE);
+            plotMeta = plot.getItemMeta();
+            plotMeta.displayName(Component.text("Участок №1 (ПРОДАН)").color(NamedTextColor.RED)
+                    .decoration(TextDecoration.BOLD, true).decoration(TextDecoration.ITALIC, false));
+
+            UUID ownerUuid = propMgr.getPlotOwner(plotId);
             OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerUuid);
             String ownerName = owner.getName() != null ? owner.getName() : "Неизвестно";
 
-            pm.lore(List.of(
+            plotMeta.lore(List.of(
                     Component.empty(),
-                    Component.text("Владелец: " + ownerName)
-                            .color(NamedTextColor.YELLOW)
+                    Component.text("Владелец: " + ownerName).color(NamedTextColor.YELLOW)
+                            .decoration(TextDecoration.ITALIC, false),
+                    Component.text("Координаты: " + coords).color(NamedTextColor.DARK_GRAY)
                             .decoration(TextDecoration.ITALIC, false),
                     Component.empty(),
-                    Component.text("Этот участок уже приобретён")
-                            .color(NamedTextColor.GRAY)
-                            .decoration(TextDecoration.ITALIC, false),
-                    Component.text("другим игроком")
-                            .color(NamedTextColor.GRAY)
-                            .decoration(TextDecoration.ITALIC, false)
+                    Component.text("Участок приобретён другим игроком")
+                            .color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)
             ));
         } else {
-            // Свободен для покупки
             plot = new ItemStack(Material.GRASS_BLOCK);
-            pm = plot.getItemMeta();
+            plotMeta = plot.getItemMeta();
 
             int price = plugin.getConfig().getInt("property.plots.plot-1.price-per-block", 32);
             int blocks = plugin.getConfig().getInt("property.plots.plot-1.surface-blocks", 1);
             int totalPrice = price * blocks;
 
-            pm.displayName(Component.text("Участок №1").color(NamedTextColor.YELLOW)
+            // Считаем всё (инвентарь + сундуки) для покупки
+            int totalCobble = ChestScanner.countTotalMaterial(player, Material.COBBLESTONE);
+
+            plotMeta.displayName(Component.text("Участок №1").color(NamedTextColor.YELLOW)
                     .decoration(TextDecoration.BOLD, true).decoration(TextDecoration.ITALIC, false));
 
             List<Component> lore = new ArrayList<>();
+            lore.add(Component.empty());
+            lore.add(Component.text("Координаты:").color(NamedTextColor.YELLOW)
+                    .decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.text(coords).color(NamedTextColor.DARK_GRAY)
+                    .decoration(TextDecoration.ITALIC, false));
             lore.add(Component.empty());
             lore.add(Component.text("Размер: " + blocks + " блок (3 вниз + 20 вверх)")
                     .color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
             lore.add(Component.text("Цена: " + totalPrice + " булыжников")
                     .color(NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.text("Земельный налог: 2 стака / 3 игр. дня")
+                    .color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
             lore.add(Component.empty());
             if (totalCobble >= totalPrice) {
                 lore.add(Component.text("ЛКМ — купить за полную стоимость")
@@ -169,16 +416,16 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
             lore.add(Component.text("ПКМ — оформить рассрочку")
                     .color(NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false));
 
-            pm.lore(lore);
+            plotMeta.lore(lore);
         }
 
-        plot.setItemMeta(pm);
+        plot.setItemMeta(plotMeta);
         gui.setItem(14, plot);
 
         // Моя собственность
         ItemStack myProp = new ItemStack(Material.BOOK);
         ItemMeta myPm = myProp.getItemMeta();
-        List<PropertyManager.OwnedPlot> owned = plugin.getPropertyManager().getOwnedPlots(uuid);
+        List<PropertyManager.OwnedPlot> owned = propMgr.getOwnedPlots(uuid);
         myPm.displayName(Component.text("Моя собственность").color(NamedTextColor.WHITE)
                 .decoration(TextDecoration.BOLD, true).decoration(TextDecoration.ITALIC, false));
 
@@ -201,6 +448,8 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
         player.openInventory(gui);
     }
 
+    // === ОБРАБОТКА КЛИКОВ ===
+
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
@@ -213,18 +462,17 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
         if (event.getRawSlot() == 14) {
             UUID uuid = player.getUniqueId();
             String plotId = "plot-1";
+            PropertyManager pm = plugin.getPropertyManager();
 
-            // Проверка на продан
-            if (plugin.getPropertyManager().isPlotSold(plotId)) {
-                if (plugin.getPropertyManager().hasPlot(uuid, plotId)) {
+            if (pm.isPlotSold(plotId)) {
+                if (pm.hasPlot(uuid, plotId)) {
                     player.sendMessage(Component.text("[Имущество] Этот участок уже ваш!")
                             .color(NamedTextColor.YELLOW));
                 } else {
-                    UUID ownerUuid = plugin.getPropertyManager().getPlotOwner(plotId);
+                    UUID ownerUuid = pm.getPlotOwner(plotId);
                     OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerUuid);
                     String ownerName = owner.getName() != null ? owner.getName() : "Неизвестно";
-                    player.sendMessage(Component.text("[Имущество] Участок уже продан игроку: "
-                                    + ownerName)
+                    player.sendMessage(Component.text("[Имущество] Участок продан: " + ownerName)
                             .color(NamedTextColor.RED));
                 }
                 return;
@@ -235,24 +483,30 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
             int totalPrice = price * blocks;
 
             if (event.isLeftClick()) {
-                // Покупка за полную стоимость
-                boolean success = plugin.getPropertyManager()
-                        .buyPlotFull(uuid, plotId, totalPrice, player);
+                boolean success = pm.buyPlotFull(uuid, plotId, totalPrice, player);
 
                 if (success) {
                     player.closeInventory();
+                    String coords = pm.getPlotCoordinates(plotId);
                     player.sendMessage(Component.empty());
-                    player.sendMessage(Component.text("╔══════════════════════════════╗")
+                    player.sendMessage(Component.text("╔══════════════════════════════════╗")
                             .color(NamedTextColor.GREEN));
                     player.sendMessage(Component.text("║  УЧАСТОК КУПЛЕН!")
                             .color(NamedTextColor.GREEN)
                             .decoration(TextDecoration.BOLD, true));
                     player.sendMessage(Component.text("║  Участок №1")
                             .color(NamedTextColor.WHITE));
-                    player.sendMessage(Component.text("║  Списано: " + totalPrice + " булыжников")
+                    player.sendMessage(Component.text("║  Координаты: " + coords)
+                            .color(NamedTextColor.GRAY));
+                    player.sendMessage(Component.text("║  Списано: " + totalPrice + " булыж.")
                             .color(NamedTextColor.YELLOW));
-                    player.sendMessage(Component.text("╚══════════════════════════════╝")
+                    player.sendMessage(Component.text("║  Земельный налог: 2 стака / 3 дня")
+                            .color(NamedTextColor.RED));
+                    player.sendMessage(Component.text("║  /property tax — оплатить")
+                            .color(NamedTextColor.AQUA));
+                    player.sendMessage(Component.text("╚══════════════════════════════════╝")
                             .color(NamedTextColor.GREEN));
+                    player.sendMessage(Component.empty());
                     plugin.getPassportManager().updateResidence(uuid, "Участок №1");
                 } else {
                     player.sendMessage(Component.text("[Имущество] Не хватает булыжника!")
@@ -260,38 +514,47 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                 }
 
             } else if (event.isRightClick()) {
-                // Рассрочка
-                if (plugin.getPropertyManager().hasAnyInstallment(uuid)) {
+                if (pm.hasAnyInstallment(uuid)) {
                     player.sendMessage(Component.text("[Имущество] У вас уже есть рассрочка!")
                             .color(NamedTextColor.RED));
                     return;
                 }
 
-                var result = plugin.getPropertyManager()
-                        .evaluateInstallment(uuid, plotId, totalPrice, player);
+                var result = pm.evaluateInstallment(uuid, plotId, totalPrice, player);
 
                 if (result.approved) {
-                    plugin.getPropertyManager()
-                            .createInstallment(uuid, plotId, totalPrice, result.termDays);
+                    pm.createInstallment(uuid, plotId, totalPrice, result.termDays);
                     player.closeInventory();
+                    String coords = pm.getPlotCoordinates(plotId);
                     plugin.getPassportManager().updateResidence(uuid, "Участок №1 (рассрочка)");
 
                     player.sendMessage(Component.empty());
-                    player.sendMessage(Component.text("╔══════════════════════════════╗")
+                    player.sendMessage(Component.text("╔══════════════════════════════════╗")
                             .color(NamedTextColor.GREEN));
                     player.sendMessage(Component.text("║  РАССРОЧКА ОДОБРЕНА!")
                             .color(NamedTextColor.GREEN)
                             .decoration(TextDecoration.BOLD, true));
-                    player.sendMessage(Component.text("║  Участок: №1")
+                    player.sendMessage(Component.text("║  Участок №1")
                             .color(NamedTextColor.WHITE));
+                    player.sendMessage(Component.text("║  Координаты: " + coords)
+                            .color(NamedTextColor.GRAY));
                     player.sendMessage(Component.text("║  Стоимость: " + totalPrice)
                             .color(NamedTextColor.YELLOW));
                     player.sendMessage(Component.text("║  Срок: " + result.termDays + " игр. дней")
                             .color(NamedTextColor.AQUA));
-                    player.sendMessage(Component.text("║  Просрочка: +3%/день")
+                    player.sendMessage(Component.text("║  Просрочка: +3%/игр. день")
                             .color(NamedTextColor.RED));
-                    player.sendMessage(Component.text("╚══════════════════════════════╝")
+                    player.sendMessage(Component.text("║  " + result.message)
+                            .color(NamedTextColor.DARK_GRAY));
+                    player.sendMessage(Component.text("║")
                             .color(NamedTextColor.GREEN));
+                    player.sendMessage(Component.text("║  /property pay <сумма> — оплатить")
+                            .color(NamedTextColor.WHITE));
+                    player.sendMessage(Component.text("║  /property info — подробности")
+                            .color(NamedTextColor.WHITE));
+                    player.sendMessage(Component.text("╚══════════════════════════════════╝")
+                            .color(NamedTextColor.GREEN));
+                    player.sendMessage(Component.empty());
                 } else {
                     player.sendMessage(Component.text("[Имущество] Рассрочка отклонена: "
                                     + result.message)
@@ -306,6 +569,18 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                                                   @NotNull Command command,
                                                   @NotNull String alias,
                                                   @NotNull String[] args) {
-        return Collections.emptyList();
+        List<String> completions = new ArrayList<>();
+        if (args.length == 1) {
+            completions.add("pay");
+            completions.add("info");
+            completions.add("tax");
+        } else if (args.length == 2 && args[0].equalsIgnoreCase("pay")) {
+            completions.add("64");
+            completions.add("128");
+            completions.add("all");
+            completions.add("1s");
+            completions.add("2s");
+        }
+        return completions;
     }
 }
