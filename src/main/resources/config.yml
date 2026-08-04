@@ -1,0 +1,205 @@
+# ============================================
+# MinePlugin — Главный конфиг
+# После изменений: /minereload
+# ============================================
+
+# === ТОЧКА ВХОДА В ШАХТУ ===
+# Координаты блока, на который нужно встать
+entry-point:
+  x: -231.477
+  y: 59.0
+  z: -46.454
+  radius: 1.5
+
+# === УРОВНИ ШАХТЫ ===
+levels:
+  level-1:
+    enabled: true
+    name: "Уровень 1"
+    height: 43
+    # Координаты телепортации при выборе уровня
+    teleport:
+      x: -229.601
+      y: 43.0
+      z: -70.282
+    # Налог в процентах (каждый N-й блок уходит в казну)
+    # 20% = каждый 5-й блок
+    tax-percent: 20
+    # Зона шахты (блоки считаются только внутри этой зоны)
+    zone:
+      min-x: -280.0
+      max-x: -180.0
+      min-y: 30.0
+      max-y: 50.0
+      min-z: -120.0
+      max-z: -20.0
+
+  level-2:
+    enabled: false
+    name: "Уровень 2"
+    height: 30
+    teleport:
+      x: -229.601
+      y: 30.0
+      z: -70.282
+    tax-percent: 15
+    zone:
+      min-x: -280.0
+      max-x: -180.0
+      min-y: 20.0
+      max-y: 35.0
+      min-z: -120.0
+      max-z: -20.0
+
+# === ГЕНЕРАТОРЫ БЛОКОВ ===
+generators:
+  generator-1:
+    enabled: true
+    x: -232
+    y: 42
+    z: -68
+  generator-2:
+    enabled: true
+    x: -230
+    y: 42
+    z: -68
+  # Добавь сколько хочешь генераторов:
+  # generator-3:
+  #   enabled: true
+  #   x: -228
+  #   y: 42
+  #   z: -68
+
+  # Задержка регенерации в тиках (1 тик = 0.05 сек, 20 = 1 сек)
+  regen-delay-ticks: 1
+
+  # Какие блоки генерируются
+  blocks:
+    - STONE
+    - DIORITE
+    - ANDESITE
+    - GRANITE
+
+# === НАЛОГОВАЯ СИСТЕМА ===
+tax:
+  # Блоки которые игрок может оставить как есть
+  # (но всё равно с налогом)
+  allowed-blocks:
+    - COBBLESTONE
+    - DIORITE
+    - ANDESITE
+
+  # Ценные руды — 100% уходят в казну
+  treasury-ores:
+    - IRON_ORE
+    - DEEPSLATE_IRON_ORE
+    - GOLD_ORE
+    - DEEPSLATE_GOLD_ORE
+    - LAPIS_ORE
+    - DEEPSLATE_LAPIS_ORE
+    - DIAMOND_ORE
+    - DEEPSLATE_DIAMOND_ORE
+    - EMERALD_ORE
+    - DEEPSLATE_EMERALD_ORE
+    - COAL_ORE
+    - DEEPSLATE_COAL_ORE
+    - REDSTONE_ORE
+    - DEEPSLATE_REDSTONE_ORE
+    - COPPER_ORE
+    - DEEPSLATE_COPPER_ORE
+
+  # Блоки при добыче которых налог идёт оригинальным блоком,
+  # а остаток игроку — булыжником
+  tax-as-original:
+    - DIORITE
+    - ANDESITE
+
+# === МАГАЗИН ===
+shop:
+  # Валюта магазина
+  currency: COBBLESTONE
+  currency-name: "Булыжник"
+
+  # Товары: название, материал, цена, описание
+  items:
+    oak-log:
+      name: "Дубовое бревно"
+      material: OAK_LOG
+      price: 32
+      description: "Отличный строительный материал"
+    porkchop:
+      name: "Свинина (сырая)"
+      material: PORKCHOP
+      price: 24
+      description: "Пожарь и утоли голод"
+    coal:
+      name: "Уголь"
+      material: COAL
+      price: 16
+      description: "Топливо для печей"
+    raw-iron:
+      name: "Сырое железо"
+      material: RAW_IRON
+      price: 64
+      description: "Переплавь в слиток"
+    diamond:
+      name: "Алмаз"
+      material: DIAMOND
+      price: 512
+      description: "Редкий и дорогой ресурс"
+    # Добавь свои товары:
+    # example:
+    #   name: "Название"
+    #   material: MATERIAL_NAME
+    #   price: 100
+    #   description: "Описание"
+
+# === КРЕДИТНАЯ СИСТЕМА ===
+credit:
+  # Максимальный кредит в штуках (100 стаков = 6400)
+  max-amount: 6400
+  # Процентная ставка (0.03 = 3%)
+  interest-rate: 0.03
+  # Интервал начисления процентов в днях
+  interest-interval-days: 3
+  # Требуется ли паспорт для кредита
+  require-passport: true
+
+# === КАЗНА ===
+kazna:
+  # Предметов на одной странице (макс 45, т.к. 9 слотов навигация)
+  items-per-page: 45
+  # Максимум страниц
+  max-pages: 100
+
+# === ТАБЛО (SCOREBOARD) ===
+scoreboard:
+  enabled: true
+  # Заголовок табло
+  title: "✦ Topicus ✦"
+  # Интервал обновления в тиках (40 = 2 сек)
+  update-interval: 40
+  # Строки табло (сверху вниз)
+  # Переменные: {player}, {ping}, {ping_color}
+  lines:
+    - "&8&m----------"
+    - "&f⚒ Ник: &a{player}"
+    - " "
+    - "&f⏱ Пинг: {ping_color}{ping} мс"
+    - "  "
+    - "&f🏛 Гос-во: &6Topicus"
+    - "&f🏠 Город: &bЭнем"
+    - "   "
+    - "&f📋 Статус: &7—"
+    - "&8&m-----------"
+
+# === СООБЩЕНИЯ ===
+messages:
+  mine-enter: "&a==============================\n&a&l Вы спустились на {level} уровень шахты!\n&7 Высота: Y = {height}\n&c Налог: каждый {tax_every}-й блок ({tax_percent}%)\n&6 Ценные руды -> казна города\n&b Компас (слот 9) — выход из шахты\n&a=============================="
+  mine-exit: "&a==============================\n&a&l Вы вышли из шахты!\n&a=============================="
+  ore-to-treasury: "&2[Шахта] &6{block_name} &eотправлена в казну города!"
+  tax-collected: "&c[Налог] &7{block_name} удержан как налог {tax_percent}%"
+  block-converted: "&e{original} → Булыжник"
+  compass-no-drop: "&cНельзя выбросить компас шахтёра!"
+  level-in-dev: "&cУровень {level} находится в разработке!"
+  no-passport-credit: "&c[Кредит] Для получения кредита нужен паспорт!\n&e[Кредит] Получите: /passport <Фамилия> <Имя> <Отчество>"
