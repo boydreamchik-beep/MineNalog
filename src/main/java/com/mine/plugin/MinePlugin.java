@@ -25,6 +25,9 @@ public class MinePlugin extends JavaPlugin {
     private ScoreboardManager scoreboardManager;
     private CreditManager creditManager;
     private PassportManager passportManager;
+    private IncomeTracker incomeTracker;
+    private PropertyManager propertyManager;
+    private TaxCollector taxCollector;
 
     @Override
     public void onEnable() {
@@ -34,7 +37,7 @@ public class MinePlugin extends JavaPlugin {
             getDataFolder().mkdirs();
         }
 
-        // Конфиг (первым!)
+        // Конфиг
         configManager = new ConfigManager(this);
         configManager.load();
 
@@ -48,10 +51,17 @@ public class MinePlugin extends JavaPlugin {
         passportManager = new PassportManager(this);
         passportManager.load();
 
+        incomeTracker = new IncomeTracker(this);
+        incomeTracker.load();
+
+        propertyManager = new PropertyManager(this);
+        propertyManager.load();
+
         taxTracker = new TaxTracker();
         freezeManager = new FreezeManager(this);
         mineGenerator = new MineGenerator(this);
         scoreboardManager = new ScoreboardManager(this);
+        taxCollector = new TaxCollector(this);
 
         // GUI
         mineLevelGUI = new MineLevelGUI(this);
@@ -70,6 +80,7 @@ public class MinePlugin extends JavaPlugin {
         mineGenerator.start();
         scoreboardManager.start();
         creditManager.startReminders();
+        taxCollector.start();
 
         // Команды
         KaznaCommand kaznaCommand = new KaznaCommand(this);
@@ -90,13 +101,20 @@ public class MinePlugin extends JavaPlugin {
         getCommand("passport").setExecutor(passportCommand);
         getCommand("passport").setTabCompleter(passportCommand);
 
-        // Команда перезагрузки конфига
+        PropertyCommand propertyCommand = new PropertyCommand(this);
+        getCommand("property").setExecutor(propertyCommand);
+        getCommand("property").setTabCompleter(propertyCommand);
+        pm.registerEvents(propertyCommand, this);
+        pm.registerEvents(new NPCListener(this, propertyCommand), this);
+
+        // Команда перезагрузки
         getCommand("minereload").setExecutor(new ReloadCommand(this));
 
         getLogger().info("=================================");
-        getLogger().info("MinePlugin v4.0.0 загружен!");
-        getLogger().info("Все настройки в config.yml");
-        getLogger().info("/minereload для перезагрузки");
+        getLogger().info("MinePlugin v5.0.0 загружен!");
+        getLogger().info("Шахта, казна, магазин, табло,");
+        getLogger().info("кредиты, паспорта, имущество,");
+        getLogger().info("автоналог, учёт дохода.");
         getLogger().info("=================================");
     }
 
@@ -108,13 +126,13 @@ public class MinePlugin extends JavaPlugin {
             creditManager.stopReminders();
         }
         if (passportManager != null) passportManager.save();
+        if (incomeTracker != null) incomeTracker.save();
+        if (propertyManager != null) propertyManager.save();
         if (scoreboardManager != null) scoreboardManager.stop();
+        if (taxCollector != null) taxCollector.stop();
         getLogger().info("MinePlugin выгружен. Данные сохранены.");
     }
 
-    /**
-     * Перезагрузка конфига без перезапуска сервера
-     */
     public void reloadPlugin() {
         configManager.reload();
         if (scoreboardManager != null) {
@@ -138,8 +156,11 @@ public class MinePlugin extends JavaPlugin {
     public ScoreboardManager getScoreboardManager() { return scoreboardManager; }
     public CreditManager getCreditManager() { return creditManager; }
     public PassportManager getPassportManager() { return passportManager; }
+    public IncomeTracker getIncomeTracker() { return incomeTracker; }
+    public PropertyManager getPropertyManager() { return propertyManager; }
+    public TaxCollector getTaxCollector() { return taxCollector; }
 
-    // === Внутренний класс команды /minereload ===
+    // Внутренний класс перезагрузки
     private static class ReloadCommand implements CommandExecutor {
         private final MinePlugin plugin;
         ReloadCommand(MinePlugin plugin) { this.plugin = plugin; }
