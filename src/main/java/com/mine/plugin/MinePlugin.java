@@ -28,6 +28,7 @@ public class MinePlugin extends JavaPlugin {
     private IncomeTracker incomeTracker;
     private PropertyManager propertyManager;
     private TaxCollector taxCollector;
+    private NPCListener npcListener;
 
     @Override
     public void onEnable() {
@@ -37,11 +38,9 @@ public class MinePlugin extends JavaPlugin {
             getDataFolder().mkdirs();
         }
 
-        // Конфиг
         configManager = new ConfigManager(this);
         configManager.load();
 
-        // Менеджеры данных
         kaznaManager = new KaznaManager(this);
         kaznaManager.load();
 
@@ -63,10 +62,8 @@ public class MinePlugin extends JavaPlugin {
         scoreboardManager = new ScoreboardManager(this);
         taxCollector = new TaxCollector(this);
 
-        // GUI
         mineLevelGUI = new MineLevelGUI(this);
 
-        // Регистрация слушателей
         PluginManager pm = getServer().getPluginManager();
         pm.registerEvents(freezeManager, this);
         pm.registerEvents(mineLevelGUI, this);
@@ -75,14 +72,15 @@ public class MinePlugin extends JavaPlugin {
         pm.registerEvents(new CompassListener(this, mineLevelGUI), this);
         pm.registerEvents(mineGenerator, this);
         pm.registerEvents(scoreboardManager, this);
+        pm.registerEvents(propertyManager, this);  // Защита участка
 
-        // Запуск систем
         mineGenerator.start();
         scoreboardManager.start();
         creditManager.startReminders();
         taxCollector.start();
+        propertyManager.startLandTaxReminder();
+        propertyManager.startInstallmentChecker();
 
-        // Команды
         KaznaCommand kaznaCommand = new KaznaCommand(this);
         getCommand("kazna").setExecutor(kaznaCommand);
         getCommand("kazna").setTabCompleter(kaznaCommand);
@@ -105,16 +103,15 @@ public class MinePlugin extends JavaPlugin {
         getCommand("property").setExecutor(propertyCommand);
         getCommand("property").setTabCompleter(propertyCommand);
         pm.registerEvents(propertyCommand, this);
-        pm.registerEvents(new NPCListener(this, propertyCommand), this);
 
-        // Команда перезагрузки
+        npcListener = new NPCListener(this, propertyCommand);
+        pm.registerEvents(npcListener, this);
+        npcListener.spawnNPC();
+
         getCommand("minereload").setExecutor(new ReloadCommand(this));
 
         getLogger().info("=================================");
-        getLogger().info("MinePlugin v5.0.0 загружен!");
-        getLogger().info("Шахта, казна, магазин, табло,");
-        getLogger().info("кредиты, паспорта, имущество,");
-        getLogger().info("автоналог, учёт дохода.");
+        getLogger().info("MinePlugin v5.2.0 загружен!");
         getLogger().info("=================================");
     }
 
@@ -127,10 +124,14 @@ public class MinePlugin extends JavaPlugin {
         }
         if (passportManager != null) passportManager.save();
         if (incomeTracker != null) incomeTracker.save();
-        if (propertyManager != null) propertyManager.save();
+        if (propertyManager != null) {
+            propertyManager.save();
+            propertyManager.stopLandTaxReminder();
+        }
         if (scoreboardManager != null) scoreboardManager.stop();
         if (taxCollector != null) taxCollector.stop();
-        getLogger().info("MinePlugin выгружен. Данные сохранены.");
+        if (npcListener != null) npcListener.despawnNPC();
+        getLogger().info("MinePlugin выгружен.");
     }
 
     public void reloadPlugin() {
@@ -139,13 +140,14 @@ public class MinePlugin extends JavaPlugin {
             scoreboardManager.stop();
             scoreboardManager.start();
         }
-        if (mineGenerator != null) {
-            mineGenerator.start();
+        if (mineGenerator != null) mineGenerator.start();
+        if (npcListener != null) {
+            npcListener.despawnNPC();
+            npcListener.spawnNPC();
         }
         getLogger().info("Конфиг перезагружен!");
     }
 
-    // Геттеры
     public static MinePlugin getInstance() { return instance; }
     public ConfigManager getConfigManager() { return configManager; }
     public KaznaManager getKaznaManager() { return kaznaManager; }
@@ -160,7 +162,6 @@ public class MinePlugin extends JavaPlugin {
     public PropertyManager getPropertyManager() { return propertyManager; }
     public TaxCollector getTaxCollector() { return taxCollector; }
 
-    // Внутренний класс перезагрузки
     private static class ReloadCommand implements CommandExecutor {
         private final MinePlugin plugin;
         ReloadCommand(MinePlugin plugin) { this.plugin = plugin; }
@@ -169,8 +170,7 @@ public class MinePlugin extends JavaPlugin {
         public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                                   @NotNull String label, @NotNull String[] args) {
             if (!sender.hasPermission("mine.admin")) {
-                sender.sendMessage(Component.text("Нет прав!")
-                        .color(NamedTextColor.RED));
+                sender.sendMessage(Component.text("Нет прав!").color(NamedTextColor.RED));
                 return true;
             }
             plugin.reloadPlugin();
