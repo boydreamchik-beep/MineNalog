@@ -43,7 +43,6 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
             sender.sendMessage("Только для игроков!");
             return true;
         }
-
         openKaznaGUI(player, 0);
         return true;
     }
@@ -63,12 +62,14 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
                         .color(NamedTextColor.GOLD)
                         .decoration(TextDecoration.BOLD, true));
 
-        // Верхний ряд
+        // Верхний ряд — декорация
         ItemStack topGlass = new ItemStack(Material.ORANGE_STAINED_GLASS_PANE);
         ItemMeta topGlassMeta = topGlass.getItemMeta();
         topGlassMeta.displayName(Component.text(" "));
         topGlass.setItemMeta(topGlassMeta);
-        for (int i = 0; i < 9; i++) gui.setItem(i, topGlass);
+        for (int i = 0; i < 9; i++) {
+            gui.setItem(i, topGlass);
+        }
 
         // Заголовок
         ItemStack header = new ItemStack(Material.GOLD_BLOCK);
@@ -96,8 +97,8 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
         header.setItemMeta(headerMeta);
         gui.setItem(4, header);
 
-        // Предметы
-        Map<Material, Integer> pageItems = kazna.getItemsForPage(page);
+        // Предметы казны — разбитые на стаки по 64
+        List<Map.Entry<Material, Integer>> pageItems = kazna.getItemsForPage(page);
 
         if (pageItems.isEmpty() && page == 0) {
             ItemStack empty = new ItemStack(Material.BARRIER);
@@ -117,12 +118,14 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
             gui.setItem(22, empty);
         } else {
             int slot = 9;
-            for (Map.Entry<Material, Integer> entry : pageItems.entrySet()) {
+            for (Map.Entry<Material, Integer> entry : pageItems) {
                 if (slot >= 45) break;
 
-                int displayAmount = Math.min(entry.getValue(), 64);
-                ItemStack item = new ItemStack(entry.getKey(), displayAmount);
+                ItemStack item = new ItemStack(entry.getKey(), entry.getValue());
                 ItemMeta meta = item.getItemMeta();
+
+                // Общее количество этого ресурса в казне
+                int totalAmount = kazna.getAmount(entry.getKey());
 
                 meta.displayName(
                         Component.text(TaxUtils.getRussianName(entry.getKey()))
@@ -131,12 +134,15 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
 
                 List<Component> lore = new ArrayList<>();
                 lore.add(Component.empty());
-                lore.add(Component.text("Количество: " + entry.getValue() + " шт.")
+                lore.add(Component.text("В ячейке: " + entry.getValue() + " шт.")
                         .color(NamedTextColor.GREEN)
                         .decoration(TextDecoration.ITALIC, false));
+                lore.add(Component.text("Всего в казне: " + totalAmount + " шт.")
+                        .color(NamedTextColor.YELLOW)
+                        .decoration(TextDecoration.ITALIC, false));
 
-                int stacks = entry.getValue() / 64;
-                int remainder = entry.getValue() % 64;
+                int stacks = totalAmount / 64;
+                int remainder = totalAmount % 64;
                 if (stacks > 0) {
                     lore.add(Component.text("= " + stacks + " стак(ов) + " + remainder + " шт.")
                             .color(NamedTextColor.DARK_GRAY)
@@ -150,14 +156,16 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
             }
         }
 
-        // Нижний ряд навигации
+        // Нижний ряд — навигация
         ItemStack navGlass = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
         ItemMeta navGlassMeta = navGlass.getItemMeta();
         navGlassMeta.displayName(Component.text(" "));
         navGlass.setItemMeta(navGlassMeta);
-        for (int i = 45; i < 54; i++) gui.setItem(i, navGlass);
+        for (int i = 45; i < 54; i++) {
+            gui.setItem(i, navGlass);
+        }
 
-        // Назад
+        // Кнопка Назад
         if (page > 0) {
             ItemStack prevBtn = new ItemStack(Material.ARROW);
             ItemMeta prevMeta = prevBtn.getItemMeta();
@@ -165,6 +173,11 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
                     .color(NamedTextColor.YELLOW)
                     .decoration(TextDecoration.BOLD, true)
                     .decoration(TextDecoration.ITALIC, false));
+            List<Component> prevLore = new ArrayList<>();
+            prevLore.add(Component.text("Страница " + page)
+                    .color(NamedTextColor.GRAY)
+                    .decoration(TextDecoration.ITALIC, false));
+            prevMeta.lore(prevLore);
             prevBtn.setItemMeta(prevMeta);
             gui.setItem(45, prevBtn);
         }
@@ -178,7 +191,7 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
         pageInfo.setItemMeta(pageInfoMeta);
         gui.setItem(49, pageInfo);
 
-        // Вперёд
+        // Кнопка Вперёд
         if (page < maxPages - 1) {
             ItemStack nextBtn = new ItemStack(Material.ARROW);
             ItemMeta nextMeta = nextBtn.getItemMeta();
@@ -186,6 +199,11 @@ public class KaznaCommand implements CommandExecutor, TabCompleter, Listener {
                     .color(NamedTextColor.YELLOW)
                     .decoration(TextDecoration.BOLD, true)
                     .decoration(TextDecoration.ITALIC, false));
+            List<Component> nextLore = new ArrayList<>();
+            nextLore.add(Component.text("Страница " + (page + 2))
+                    .color(NamedTextColor.GRAY)
+                    .decoration(TextDecoration.ITALIC, false));
+            nextMeta.lore(nextLore);
             nextBtn.setItemMeta(nextMeta);
             gui.setItem(53, nextBtn);
         }
