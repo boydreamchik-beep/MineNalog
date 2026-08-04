@@ -1,6 +1,7 @@
 package com.mine.plugin.commands;
 
 import com.mine.plugin.MinePlugin;
+import com.mine.plugin.managers.ConfigManager;
 import com.mine.plugin.managers.CreditManager;
 import com.mine.plugin.managers.CreditManager.CreditData;
 import net.kyori.adventure.text.Component;
@@ -20,15 +21,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Команда /credit
- * 
- * /credit take <количество>  — взять кредит (в штуках булыжника)
- * /credit take <стаки>s      — взять кредит (в стаках)
- * /credit info               — информация о кредите
- * /credit pay <количество>   — погасить кредит
- * /credit pay all             — погасить весь кредит
- */
 public class CreditCommand implements CommandExecutor, TabCompleter {
 
     private final MinePlugin plugin;
@@ -72,13 +64,14 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
         }
 
         CreditManager cm = plugin.getCreditManager();
+        ConfigManager cfg = plugin.getConfigManager();
         UUID uuid = player.getUniqueId();
 
-        // Проверяем паспорт
-        if (!plugin.getPassportManager().hasPassport(uuid)) {
+        // Проверяем паспорт (если требуется по конфигу)
+        if (cfg.isCreditRequirePassport() && !plugin.getPassportManager().hasPassport(uuid)) {
             player.sendMessage(Component.text("[Кредит] Для получения кредита нужен паспорт!")
                     .color(NamedTextColor.RED));
-            player.sendMessage(Component.text("[Кредит] Получите паспорт: /passport <Фамилия> <Имя> <Отчество>")
+            player.sendMessage(Component.text("[Кредит] Получите: /passport <Фамилия> <Имя> <Отчество>")
                     .color(NamedTextColor.YELLOW));
             return;
         }
@@ -88,7 +81,6 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
 
         try {
             if (amountStr.toLowerCase().endsWith("s")) {
-                // Стаки
                 int stacks = Integer.parseInt(amountStr.substring(0, amountStr.length() - 1));
                 amount = stacks * 64;
             } else {
@@ -101,13 +93,15 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
         }
 
         CreditManager.TakeResult result = cm.takeCredit(uuid, amount);
+        int maxAmount = cfg.getCreditMaxAmount();
+        double interestRate = cfg.getCreditInterestRate();
+        int interestDays = cfg.getCreditInterestDays();
 
         switch (result) {
             case SUCCESS -> {
-                // Выдаём булыжник
                 cm.giveCobblestone(player, amount);
-
-                int totalDebt = cm.getCreditData(uuid).amount;
+                CreditData data = cm.getCreditData(uuid);
+                int totalDebt = data != null ? data.amount : amount;
 
                 player.sendMessage(Component.empty());
                 player.sendMessage(Component.text("╔══════════════════════════════╗")
@@ -122,7 +116,8 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
                 player.sendMessage(Component.text("║  (" + (amount / 64) + " стаков + "
                                 + (amount % 64) + " шт.)")
                         .color(NamedTextColor.GRAY));
-                player.sendMessage(Component.text("║  Ставка: 3% каждые 3 дня")
+                player.sendMessage(Component.text("║  Ставка: " + (int)(interestRate * 100)
+                                + "% каждые " + interestDays + " дня")
                         .color(NamedTextColor.YELLOW));
                 player.sendMessage(Component.text("║  Общий долг: " + totalDebt + " булыж.")
                         .color(NamedTextColor.RED));
@@ -133,12 +128,12 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
             case EXCEEDS_LIMIT -> {
                 CreditData data = cm.getCreditData(uuid);
                 int currentDebt = data != null ? data.amount : 0;
-                int canTake = CreditManager.MAX_CREDIT - currentDebt;
+                int canTake = maxAmount - currentDebt;
 
                 player.sendMessage(Component.text("[Кредит] Превышен лимит!")
                         .color(NamedTextColor.RED));
-                player.sendMessage(Component.text("[Кредит] Максимум: " + CreditManager.MAX_CREDIT
-                                + " (" + (CreditManager.MAX_CREDIT / 64) + " стаков)")
+                player.sendMessage(Component.text("[Кредит] Максимум: " + maxAmount
+                                + " (" + (maxAmount / 64) + " стаков)")
                         .color(NamedTextColor.GRAY));
                 player.sendMessage(Component.text("[Кредит] Текущий долг: " + currentDebt)
                         .color(NamedTextColor.GRAY));
@@ -154,6 +149,7 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
 
     private void handleInfo(Player player) {
         CreditManager cm = plugin.getCreditManager();
+        ConfigManager cfg = plugin.getConfigManager();
         UUID uuid = player.getUniqueId();
 
         if (!cm.hasCredit(uuid)) {
@@ -172,6 +168,8 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
 
         CreditData data = cm.getCreditData(uuid);
         SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+        double interestRate = cfg.getCreditInterestRate();
+        int interestDays = cfg.getCreditInterestDays();
 
         player.sendMessage(Component.empty());
         player.sendMessage(Component.text("╔══════════════════════════════╗")
@@ -186,7 +184,8 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(Component.text("║  (" + (data.amount / 64) + " стаков + "
                         + (data.amount % 64) + " шт.)")
                 .color(NamedTextColor.GRAY));
-        player.sendMessage(Component.text("║  Ставка: 3% каждые 3 дня")
+        player.sendMessage(Component.text("║  Ставка: " + (int)(interestRate * 100)
+                        + "% каждые " + interestDays + " дня")
                 .color(NamedTextColor.YELLOW));
         player.sendMessage(Component.text("║  Дата взятия: " + sdf.format(new Date(data.takenTime)))
                 .color(NamedTextColor.WHITE));
@@ -195,8 +194,8 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(Component.text("║")
                 .color(NamedTextColor.GOLD));
 
-        // Следующее начисление процентов
-        long nextReminder = data.lastReminder + (3L * 24 * 60 * 60 * 1000);
+        long intervalMs = interestDays * 24L * 60 * 60 * 1000;
+        long nextReminder = data.lastReminder + intervalMs;
         long remaining = nextReminder - System.currentTimeMillis();
         if (remaining > 0) {
             long hours = remaining / (1000 * 60 * 60);
@@ -208,7 +207,7 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
                     .color(NamedTextColor.RED));
         }
 
-        int nextInterest = (int) Math.ceil(data.amount * CreditManager.INTEREST_RATE);
+        int nextInterest = (int) Math.ceil(data.amount * interestRate);
         player.sendMessage(Component.text("║  Следующие проценты: +" + nextInterest + " булыж.")
                 .color(NamedTextColor.YELLOW));
         player.sendMessage(Component.text("╚══════════════════════════════╝")
@@ -278,7 +277,7 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
                             .color(NamedTextColor.GREEN));
                 }
             }
-            case NOT_ENOUGH_COBBLESTONE -> {
+            case NOT_ENOUGH -> {
                 player.sendMessage(Component.text("[Кредит] Не хватает булыжника для оплаты!")
                         .color(NamedTextColor.RED));
             }
@@ -294,6 +293,11 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendHelp(Player player) {
+        ConfigManager cfg = plugin.getConfigManager();
+        int maxAmount = cfg.getCreditMaxAmount();
+        double interestRate = cfg.getCreditInterestRate();
+        int interestDays = cfg.getCreditInterestDays();
+
         player.sendMessage(Component.empty());
         player.sendMessage(Component.text("╔══════════════════════════════╗")
                 .color(NamedTextColor.GOLD));
@@ -324,12 +328,15 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
                 .color(NamedTextColor.GRAY));
         player.sendMessage(Component.text("║")
                 .color(NamedTextColor.GOLD));
-        player.sendMessage(Component.text("║  Макс: 100 стаков (6400 шт.)")
+        player.sendMessage(Component.text("║  Макс: " + maxAmount + " (" + (maxAmount / 64) + " стаков)")
                 .color(NamedTextColor.YELLOW));
-        player.sendMessage(Component.text("║  Ставка: 3% каждые 3 дня")
+        player.sendMessage(Component.text("║  Ставка: " + (int)(interestRate * 100)
+                        + "% каждые " + interestDays + " дня")
                 .color(NamedTextColor.YELLOW));
-        player.sendMessage(Component.text("║  Нужен паспорт: /passport")
-                .color(NamedTextColor.RED));
+        if (cfg.isCreditRequirePassport()) {
+            player.sendMessage(Component.text("║  Нужен паспорт: /passport")
+                    .color(NamedTextColor.RED));
+        }
         player.sendMessage(Component.text("╚══════════════════════════════╝")
                 .color(NamedTextColor.GOLD));
         player.sendMessage(Component.empty());
