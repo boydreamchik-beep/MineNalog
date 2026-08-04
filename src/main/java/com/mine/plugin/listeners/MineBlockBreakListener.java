@@ -44,7 +44,6 @@ public class MineBlockBreakListener implements Listener {
 
         ConfigManager cfg = plugin.getConfigManager();
 
-        // Проверяем зону
         double bx = event.getBlock().getX();
         double by = event.getBlock().getY();
         double bz = event.getBlock().getZ();
@@ -58,9 +57,11 @@ public class MineBlockBreakListener implements Listener {
         Material brokenBlock = event.getBlock().getType();
         event.setDropItems(false);
 
-        // Ценные руды → казна
+        // Ценные руды -> казна
         if (cfg.isTreasuryOre(brokenBlock)) {
             plugin.getKaznaManager().addItem(brokenBlock, 1);
+            plugin.getIncomeTracker().recordTaxPaid(uuid, 1);
+
             player.sendMessage(Component.text("[Шахта] ")
                     .color(NamedTextColor.DARK_GREEN)
                     .append(Component.text(TaxUtils.getRussianName(brokenBlock))
@@ -70,12 +71,12 @@ public class MineBlockBreakListener implements Listener {
             return;
         }
 
-        // Определяем налоговый блок и блок для игрока
+        // Определяем материалы
         boolean isTaxAsOriginal = cfg.isTaxAsOriginal(brokenBlock);
         boolean isTaxBlock = taxTracker.incrementAndCheckTax(uuid);
 
         Material taxMaterial = isTaxAsOriginal ? brokenBlock : Material.COBBLESTONE;
-        Material playerMaterial = Material.COBBLESTONE; // Игрок всегда получает булыжник
+        Material playerMaterial = Material.COBBLESTONE;
 
         if (brokenBlock == Material.COBBLESTONE) {
             taxMaterial = Material.COBBLESTONE;
@@ -84,6 +85,8 @@ public class MineBlockBreakListener implements Listener {
 
         if (isTaxBlock) {
             plugin.getKaznaManager().addItem(taxMaterial, 1);
+            plugin.getIncomeTracker().recordTaxPaid(uuid, 1);
+
             player.sendMessage(Component.text("[Налог] ")
                     .color(NamedTextColor.RED)
                     .append(Component.text(TaxUtils.getRussianName(taxMaterial)
@@ -91,6 +94,7 @@ public class MineBlockBreakListener implements Listener {
                             .color(NamedTextColor.GRAY)));
         } else {
             giveItem(player, playerMaterial, 1);
+            plugin.getIncomeTracker().recordMined(uuid, 1);
 
             if (brokenBlock != Material.COBBLESTONE && brokenBlock != playerMaterial) {
                 player.sendActionBar(Component.text(
