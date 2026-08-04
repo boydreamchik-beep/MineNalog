@@ -3,6 +3,7 @@ package com.mine.plugin.commands;
 import com.mine.plugin.MinePlugin;
 import com.mine.plugin.managers.PassportManager;
 import com.mine.plugin.managers.PassportManager.PassportData;
+import com.mine.plugin.managers.IncomeTracker;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -15,17 +16,13 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 /**
- * Команда /passport
+ * /passport <Фамилия> <Имя> <Отчество> <ДатаРождения> <Пол>
+ * /passport — просмотр
  * 
- * /passport <Фамилия> <Имя> <Отчество>  — получить паспорт (один раз)
- * /passport                              — просмотреть свой паспорт
+ * Место рождения автоматически: Topicus, Энем
  */
 public class PassportCommand implements CommandExecutor, TabCompleter {
 
@@ -46,7 +43,6 @@ public class PassportCommand implements CommandExecutor, TabCompleter {
         UUID uuid = player.getUniqueId();
         PassportManager pm = plugin.getPassportManager();
 
-        // Если нет аргументов — показать паспорт
         if (args.length == 0) {
             if (pm.hasPassport(uuid)) {
                 showPassport(player);
@@ -54,63 +50,85 @@ public class PassportCommand implements CommandExecutor, TabCompleter {
                 player.sendMessage(Component.empty());
                 player.sendMessage(Component.text("[Паспорт] У вас нет паспорта!")
                         .color(NamedTextColor.RED));
-                player.sendMessage(Component.text("[Паспорт] Получите: /passport <Фамилия> <Имя> <Отчество>")
+                player.sendMessage(Component.text("[Паспорт] Получите:")
                         .color(NamedTextColor.YELLOW));
+                player.sendMessage(Component.text("/passport <Фамилия> <Имя> <Отчество> <ДатаРождения> <Пол>")
+                        .color(NamedTextColor.GRAY));
+                player.sendMessage(Component.text("Пример: /passport Иванов Иван Иванович 01.01.2000 М")
+                        .color(NamedTextColor.DARK_GRAY));
                 player.sendMessage(Component.empty());
             }
             return true;
         }
 
-        // Если уже есть паспорт — нельзя получить снова
         if (pm.hasPassport(uuid)) {
             player.sendMessage(Component.text("[Паспорт] У вас уже есть паспорт!")
                     .color(NamedTextColor.RED));
-            player.sendMessage(Component.text("[Паспорт] Используйте /passport для просмотра")
+            player.sendMessage(Component.text("[Паспорт] /passport — для просмотра")
                     .color(NamedTextColor.GRAY));
             return true;
         }
 
-        // Нужно 3 аргумента: Фамилия Имя Отчество
-        if (args.length < 3) {
-            player.sendMessage(Component.text("[Паспорт] Укажите полное ФИО!")
+        // Нужно 5 аргументов
+        if (args.length < 5) {
+            player.sendMessage(Component.text("[Паспорт] Заполните все поля!")
                     .color(NamedTextColor.RED));
-            player.sendMessage(Component.text("[Паспорт] /passport <Фамилия> <Имя> <Отчество>")
+            player.sendMessage(Component.text("/passport <Фамилия> <Имя> <Отчество> <ДатаРождения> <Пол>")
                     .color(NamedTextColor.YELLOW));
+            player.sendMessage(Component.text("Дата: ДД.ММ.ГГГГ | Пол: М или Ж")
+                    .color(NamedTextColor.GRAY));
             return true;
         }
 
-        String lastName = args[0];
-        String firstName = args[1];
-        String middleName = args[2];
+        String lastName = capitalize(args[0]);
+        String firstName = capitalize(args[1]);
+        String middleName = capitalize(args[2]);
+        String birthDate = args[3];
+        String genderInput = args[4].toUpperCase();
 
-        // Валидация: только буквы
+        // Валидация ФИО
         if (!isValidName(lastName) || !isValidName(firstName) || !isValidName(middleName)) {
             player.sendMessage(Component.text("[Паспорт] ФИО может содержать только буквы!")
                     .color(NamedTextColor.RED));
             return true;
         }
 
-        // Валидация: длина
-        if (lastName.length() < 2 || firstName.length() < 2 || middleName.length() < 2) {
-            player.sendMessage(Component.text("[Паспорт] Каждое поле минимум 2 символа!")
+        // Валидация даты
+        if (!birthDate.matches("\\d{2}\\.\\d{2}\\.\\d{4}")) {
+            player.sendMessage(Component.text("[Паспорт] Неверный формат даты! Используйте: ДД.ММ.ГГГГ")
                     .color(NamedTextColor.RED));
             return true;
         }
 
-        if (lastName.length() > 20 || firstName.length() > 20 || middleName.length() > 20) {
-            player.sendMessage(Component.text("[Паспорт] Каждое поле максимум 20 символов!")
+        // Валидация пола
+        String gender;
+        if (genderInput.equals("М") || genderInput.equals("M")) {
+            gender = "Мужской";
+        } else if (genderInput.equals("Ж") || genderInput.equals("F")) {
+            gender = "Женский";
+        } else {
+            player.sendMessage(Component.text("[Паспорт] Пол: М (мужской) или Ж (женский)")
                     .color(NamedTextColor.RED));
             return true;
         }
 
-        // Первая буква заглавная
-        lastName = capitalize(lastName);
-        firstName = capitalize(firstName);
-        middleName = capitalize(middleName);
+        String birthPlace = plugin.getConfig().getString("passport.default-birth-place",
+                "Topicus, Энем");
 
-        // Выдаём паспорт
-        boolean success = pm.issuePassport(uuid, player.getName(),
-                lastName, firstName, middleName);
+        PassportData data = new PassportData();
+        data.lastName = lastName;
+        data.firstName = firstName;
+        data.middleName = middleName;
+        data.birthDate = birthDate;
+        data.birthPlace = birthPlace;
+        data.gender = gender;
+        data.residenceStatus = "В стране";
+        data.searchStatus = "Нет";
+        data.residence = "Не указано";
+        data.playerName = player.getName();
+        data.issueDate = System.currentTimeMillis();
+
+        boolean success = pm.issuePassport(uuid, data);
 
         if (success) {
             player.sendMessage(Component.empty());
@@ -121,12 +139,7 @@ public class PassportCommand implements CommandExecutor, TabCompleter {
                     .decoration(TextDecoration.BOLD, true));
             player.sendMessage(Component.text("╚══════════════════════════════════╝")
                     .color(NamedTextColor.DARK_GREEN));
-            player.sendMessage(Component.empty());
-
             showPassport(player);
-        } else {
-            player.sendMessage(Component.text("[Паспорт] Ошибка выдачи!")
-                    .color(NamedTextColor.RED));
         }
 
         return true;
@@ -137,60 +150,74 @@ public class PassportCommand implements CommandExecutor, TabCompleter {
         if (data == null) return;
 
         SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy");
+        IncomeTracker.IncomeData income = plugin.getIncomeTracker()
+                .getIncome(player.getUniqueId());
 
         player.sendMessage(Component.empty());
-        player.sendMessage(Component.text("┌──────────────────────────────────┐")
+        player.sendMessage(Component.text("┌──────────────────────────────────────┐")
                 .color(NamedTextColor.DARK_RED));
-        player.sendMessage(Component.text("│      ПАСПОРТ ГРАЖДАНИНА         │")
+        player.sendMessage(Component.text("│        ПАСПОРТ ГРАЖДАНИНА           │")
                 .color(NamedTextColor.DARK_RED)
                 .decoration(TextDecoration.BOLD, true));
-        player.sendMessage(Component.text("│      Государство Topicus        │")
+        player.sendMessage(Component.text("│        Государство Topicus          │")
                 .color(NamedTextColor.GOLD));
-        player.sendMessage(Component.text("│                                  │")
+        player.sendMessage(Component.text("│                                      │")
                 .color(NamedTextColor.DARK_RED));
-        player.sendMessage(Component.text("│  Фамилия:  ")
+        player.sendMessage(Component.text("│  Фамилия:    ")
                 .color(NamedTextColor.DARK_RED)
-                .append(Component.text(data.lastName)
-                        .color(NamedTextColor.WHITE)
+                .append(Component.text(data.lastName).color(NamedTextColor.WHITE)
                         .decoration(TextDecoration.BOLD, true)));
-        player.sendMessage(Component.text("│  Имя:      ")
+        player.sendMessage(Component.text("│  Имя:        ")
                 .color(NamedTextColor.DARK_RED)
-                .append(Component.text(data.firstName)
-                        .color(NamedTextColor.WHITE)
+                .append(Component.text(data.firstName).color(NamedTextColor.WHITE)
                         .decoration(TextDecoration.BOLD, true)));
-        player.sendMessage(Component.text("│  Отчество: ")
+        player.sendMessage(Component.text("│  Отчество:   ")
                 .color(NamedTextColor.DARK_RED)
-                .append(Component.text(data.middleName)
-                        .color(NamedTextColor.WHITE)
+                .append(Component.text(data.middleName).color(NamedTextColor.WHITE)
                         .decoration(TextDecoration.BOLD, true)));
-        player.sendMessage(Component.text("│                                  │")
+        player.sendMessage(Component.text("│  Дата рожд.: ")
+                .color(NamedTextColor.DARK_RED)
+                .append(Component.text(data.birthDate).color(NamedTextColor.GRAY)));
+        player.sendMessage(Component.text("│  Место рожд.: ")
+                .color(NamedTextColor.DARK_RED)
+                .append(Component.text(data.birthPlace).color(NamedTextColor.GRAY)));
+        player.sendMessage(Component.text("│  Пол:        ")
+                .color(NamedTextColor.DARK_RED)
+                .append(Component.text(data.gender).color(NamedTextColor.GRAY)));
+        player.sendMessage(Component.text("│                                      │")
                 .color(NamedTextColor.DARK_RED));
-        player.sendMessage(Component.text("│  Ник: ")
+        player.sendMessage(Component.text("│  Ник:        ")
                 .color(NamedTextColor.DARK_RED)
-                .append(Component.text(data.playerName)
-                        .color(NamedTextColor.AQUA)));
-        player.sendMessage(Component.text("│  Город: ")
+                .append(Component.text(data.playerName).color(NamedTextColor.AQUA)));
+        player.sendMessage(Component.text("│  Город:      ")
                 .color(NamedTextColor.DARK_RED)
-                .append(Component.text("Энем")
-                        .color(NamedTextColor.GREEN)));
+                .append(Component.text("Энем").color(NamedTextColor.GREEN)));
+        player.sendMessage(Component.text("│  Проживание: ")
+                .color(NamedTextColor.DARK_RED)
+                .append(Component.text(data.residence).color(NamedTextColor.GRAY)));
         player.sendMessage(Component.text("│  Дата выдачи: ")
                 .color(NamedTextColor.DARK_RED)
                 .append(Component.text(sdf.format(new Date(data.issueDate)))
                         .color(NamedTextColor.GRAY)));
-        player.sendMessage(Component.text("│                                  │")
+        player.sendMessage(Component.text("│                                      │")
                 .color(NamedTextColor.DARK_RED));
-        player.sendMessage(Component.text("│  Статус: ")
+        player.sendMessage(Component.text("│  Статус:     ")
                 .color(NamedTextColor.DARK_RED)
-                .append(Component.text("Гражданин Topicus")
-                        .color(NamedTextColor.GOLD)));
-        player.sendMessage(Component.text("└──────────────────────────────────┘")
+                .append(Component.text(data.residenceStatus).color(NamedTextColor.GOLD)));
+        player.sendMessage(Component.text("│  Обыск:      ")
+                .color(NamedTextColor.DARK_RED)
+                .append(Component.text(data.searchStatus).color(NamedTextColor.GRAY)));
+        player.sendMessage(Component.text("│  Налог оплач.: ")
+                .color(NamedTextColor.DARK_RED)
+                .append(Component.text((income.taxPaidTotal + income.autoTaxPaid) + " булыж.")
+                        .color(NamedTextColor.YELLOW)));
+        player.sendMessage(Component.text("└──────────────────────────────────────┘")
                 .color(NamedTextColor.DARK_RED));
         player.sendMessage(Component.empty());
     }
 
     private boolean isValidName(String name) {
-        // Разрешаем кириллицу и латиницу
-        return name.matches("[a-zA-Zа-яА-ЯёЁ]+");
+        return name.matches("[a-zA-Zа-яА-ЯёЁ]+") && name.length() >= 2 && name.length() <= 20;
     }
 
     private String capitalize(String str) {
@@ -203,16 +230,13 @@ public class PassportCommand implements CommandExecutor, TabCompleter {
                                                   @NotNull Command command,
                                                   @NotNull String alias,
                                                   @NotNull String[] args) {
-        List<String> completions = new ArrayList<>();
-
-        if (args.length == 1) {
-            completions.add("<Фамилия>");
-        } else if (args.length == 2) {
-            completions.add("<Имя>");
-        } else if (args.length == 3) {
-            completions.add("<Отчество>");
-        }
-
-        return completions;
+        return switch (args.length) {
+            case 1 -> List.of("<Фамилия>");
+            case 2 -> List.of("<Имя>");
+            case 3 -> List.of("<Отчество>");
+            case 4 -> List.of("<ДД.ММ.ГГГГ>");
+            case 5 -> List.of("М", "Ж");
+            default -> Collections.emptyList();
+        };
     }
 }
