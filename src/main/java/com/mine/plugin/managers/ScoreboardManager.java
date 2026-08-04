@@ -1,8 +1,9 @@
 package com.mine.plugin.managers;
 
 import com.mine.plugin.MinePlugin;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -20,6 +21,10 @@ public class ScoreboardManager implements Listener {
 
     private final MinePlugin plugin;
     private BukkitTask updateTask;
+
+    // Сериализатор для перевода & кодов в Component
+    private static final LegacyComponentSerializer LEGACY = 
+            LegacyComponentSerializer.legacyAmpersand();
 
     public ScoreboardManager(MinePlugin plugin) {
         this.plugin = plugin;
@@ -48,36 +53,39 @@ public class ScoreboardManager implements Listener {
 
         Scoreboard board = Bukkit.getScoreboardManager().getNewScoreboard();
 
-        String title = ChatColor.translateAlternateColorCodes('&', cfg.getScoreboardTitle());
+        // Заголовок как Component
+        Component titleComponent = LEGACY.deserialize(cfg.getScoreboardTitle());
 
-        Objective obj = board.registerNewObjective("mineinfo", Criteria.DUMMY,
-                net.kyori.adventure.text.Component.text(title));
+        Objective obj = board.registerNewObjective("mineinfo", Criteria.DUMMY, titleComponent);
         obj.setDisplaySlot(DisplaySlot.SIDEBAR);
 
         List<String> lines = cfg.getScoreboardLines();
         int score = lines.size();
 
         for (String line : lines) {
-            // Замена переменных
             int ping = player.getPing();
             String pingColor;
-            if (ping < 50) pingColor = "§a";
-            else if (ping < 100) pingColor = "§e";
-            else if (ping < 200) pingColor = "§6";
-            else pingColor = "§c";
+            if (ping < 50) pingColor = "&a";
+            else if (ping < 100) pingColor = "&e";
+            else if (ping < 200) pingColor = "&6";
+            else pingColor = "&c";
 
-            line = line.replace("{player}", player.getName());
-            line = line.replace("{ping}", String.valueOf(ping));
-            line = line.replace("{ping_color}", pingColor);
-            line = ChatColor.translateAlternateColorCodes('&', line);
+            String processed = line
+                    .replace("{player}", player.getName())
+                    .replace("{ping}", String.valueOf(ping))
+                    .replace("{ping_color}", pingColor);
 
-            // Уникальность строк (Minecraft требует уникальные строки)
-            StringBuilder uniqueLine = new StringBuilder(line);
-            while (board.getEntries().contains(uniqueLine.toString())) {
-                uniqueLine.append("§r");
+            // Переводим & коды в § через LegacyComponentSerializer
+            Component lineComponent = LEGACY.deserialize(processed);
+            String legacyText = net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', processed);
+
+            // Уникальность строк
+            StringBuilder unique = new StringBuilder(legacyText);
+            while (board.getEntries().contains(unique.toString())) {
+                unique.append("§r");
             }
 
-            obj.getScore(uniqueLine.toString()).setScore(score--);
+            obj.getScore(unique.toString()).setScore(score--);
         }
 
         player.setScoreboard(board);
