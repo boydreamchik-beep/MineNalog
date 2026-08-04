@@ -7,16 +7,11 @@ import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.*;
 
-/**
- * Центральный менеджер конфигов.
- * Все настройки читаются отсюда.
- */
 public class ConfigManager {
 
     private final MinePlugin plugin;
     private FileConfiguration config;
 
-    // Кэшированные значения
     private double entryX, entryY, entryZ, entryRadius;
     private final List<LevelConfig> levels = new ArrayList<>();
     private final List<GeneratorConfig> generators = new ArrayList<>();
@@ -75,7 +70,9 @@ public class ConfigManager {
         load();
     }
 
-    // === ЗАГРУЗКА СЕКЦИЙ ===
+    public FileConfiguration getConfig() {
+        return config;
+    }
 
     private void loadEntryPoint() {
         entryX = config.getDouble("entry-point.x", -231.477);
@@ -220,7 +217,7 @@ public class ConfigManager {
 
     private void loadScoreboard() {
         scoreboardEnabled = config.getBoolean("scoreboard.enabled", true);
-        scoreboardTitle = config.getString("scoreboard.title", "✦ Topicus ✦");
+        scoreboardTitle = config.getString("scoreboard.title", "Topicus");
         scoreboardUpdateInterval = config.getInt("scoreboard.update-interval", 40);
         scoreboardLines.addAll(config.getStringList("scoreboard.lines"));
     }
@@ -228,7 +225,6 @@ public class ConfigManager {
     private void loadMessages() {
         ConfigurationSection msgSection = config.getConfigurationSection("messages");
         if (msgSection == null) return;
-
         for (String key : msgSection.getKeys(false)) {
             messages.put(key, msgSection.getString(key, ""));
         }
@@ -242,20 +238,6 @@ public class ConfigManager {
     public double getEntryRadius() { return entryRadius; }
 
     public List<LevelConfig> getLevels() { return levels; }
-    public LevelConfig getLevel(int index) {
-        if (index >= 0 && index < levels.size()) return levels.get(index);
-        return null;
-    }
-    public LevelConfig getEnabledLevel(int index) {
-        int count = 0;
-        for (LevelConfig level : levels) {
-            if (level.enabled) {
-                if (count == index) return level;
-                count++;
-            }
-        }
-        return null;
-    }
 
     public List<GeneratorConfig> getGenerators() { return generators; }
     public long getRegenDelayTicks() { return regenDelayTicks; }
@@ -290,15 +272,7 @@ public class ConfigManager {
         return messages.getOrDefault(key, "");
     }
 
-    public String getMessage(String key, Map<String, String> placeholders) {
-        String msg = getMessage(key);
-        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
-            msg = msg.replace("{" + entry.getKey() + "}", entry.getValue());
-        }
-        return msg;
-    }
-
-    // === КЛАССЫ КОНФИГОВ ===
+    // === КЛАССЫ ===
 
     public static class LevelConfig {
         public String id;
