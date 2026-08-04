@@ -12,12 +12,16 @@ public class MineInventoryHolder implements InventoryHolder {
         ALREADY_IN_MINE,
         SHOP,
         KAZNA_PAGED,
-        CREDIT,            // ➕ НОВЫЙ (на будущее)
-        PASSPORT           // ➕ НОВЫЙ (на будущее)
+        CREDIT,
+        PASSPORT,
+        PROPERTY_MENU,
+        PROPERTY_PLOT_CONFIRM,
+        INSTALLMENT_CONFIRM
     }
 
     private final GUIType type;
     private int page = 0;
+    private String extraData = "";
 
     public MineInventoryHolder(GUIType type) {
         this.type = type;
@@ -28,8 +32,14 @@ public class MineInventoryHolder implements InventoryHolder {
         this.page = page;
     }
 
+    public MineInventoryHolder(GUIType type, String extraData) {
+        this.type = type;
+        this.extraData = extraData;
+    }
+
     public GUIType getType() { return type; }
     public int getPage() { return page; }
+    public String getExtraData() { return extraData; }
 
     @Override
     public @NotNull Inventory getInventory() { return null; }
