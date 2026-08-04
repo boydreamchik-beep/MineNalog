@@ -2,7 +2,6 @@ package com.mine.plugin.managers;
 
 import com.mine.plugin.MinePlugin;
 import org.bukkit.Material;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -11,7 +10,12 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * Управление имуществом — участки земли.
+ * Управление имуществом.
+ * 
+ * ИЗМЕНЕНИЯ:
+ * - Отменяются все АКТИВНЫЕ рассрочки при загрузке (одноразово)
+ * - Каждый участок можно купить только ОДИН РАЗ (глобально)
+ * - Флаг soldTo = кто купил (UUID) или null если свободен
  */
 public class PropertyManager {
 
@@ -19,11 +23,14 @@ public class PropertyManager {
     private final File file;
     private FileConfiguration config;
 
-    // UUID -> список купленных участков
+    // UUID владельца -> список участков
     private final Map<UUID, List<OwnedPlot>> ownedPlots = new HashMap<>();
 
-    // UUID -> рассрочки
+    // UUID -> рассрочка (только новые, старые отменяются)
     private final Map<UUID, InstallmentData> installments = new HashMap<>();
+
+    // plotId -> UUID покупателя (если продан)
+    private final Map<String, UUID> soldPlots = new HashMap<>();
 
     public PropertyManager(MinePlugin plugin) {
         this.plugin = plugin;
@@ -37,8 +44,24 @@ public class PropertyManager {
         config = YamlConfiguration.loadConfiguration(file);
         ownedPlots.clear();
         installments.clear();
+        soldPlots.clear();
 
-        // Загрузка участков
+        // Загрузка проданных участков
+        if (config.contains("sold-plots")) {
+            var section = config.getConfigurationSection("sold-plots");
+            if (section != null) {
+                for (String plotId : section.getKeys(false)) {
+                    try {
+                        String uuidStr = section.getString(plotId);
+                        if (uuidStr != null) {
+                            soldPlots.put(plotId, UUID.fromString(uuidStr));
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+
+        // Загрузка участков в собственности
         if (config.contains("owned")) {
             var section = config.getConfigurationSection("owned");
             if (section != null) {
@@ -61,33 +84,43 @@ public class PropertyManager {
             }
         }
 
-        // Загрузка рассрочек
-        if (config.contains("installments")) {
-            var section = config.getConfigurationSection("installments");
-            if (section != null) {
-                for (String uuidStr : section.getKeys(false)) {
-                    try {
-                        UUID uuid = UUID.fromString(uuidStr);
-                        var instSection = section.getConfigurationSection(uuidStr);
-                        if (instSection != null) {
-                            String plotId = instSection.getString("plot_id", "");
-                            int totalCost = instSection.getInt("total_cost", 0);
-                            int remaining = instSection.getInt("remaining", 0);
-                            int termDays = instSection.getInt("term_days", 0);
-                            long startDate = instSection.getLong("start_date", 0);
-                            long dueDate = instSection.getLong("due_date", 0);
-                            installments.put(uuid, new InstallmentData(
-                                    plotId, totalCost, remaining, termDays, startDate, dueDate));
-                        }
-                    } catch (Exception ignored) {}
+        // ОТМЕНА всех активных рассрочек (одноразово)
+        // Сохранённые рассрочки НЕ загружаем — они отменяются
+        // При этом участки в собственности остаются с флагом paidFull = true
+        cancelAllActiveInstallments();
+
+        save();
+        plugin.getLogger().info("Загружено участков: " + ownedPlots.size()
+                + ", продано: " + soldPlots.size());
+    }
+
+    /**
+     * Отменяет все активные рассрочки.
+     * Если у игрока была рассрочка — участок остаётся у него как оплаченный полностью.
+     */
+    private void cancelAllActiveInstallments() {
+        // Проходим по всем участкам, у кого не был paid_full = true
+        for (var entry : ownedPlots.entrySet()) {
+            for (OwnedPlot plot : entry.getValue()) {
+                if (!plot.paidFull) {
+                    plot.paidFull = true;
+                    plugin.getLogger().info("Рассрочка отменена для игрока "
+                            + entry.getKey() + " на участок " + plot.plotId);
                 }
             }
         }
+        installments.clear();
     }
 
     public void save() {
         config = new YamlConfiguration();
 
+        // Проданные
+        for (var entry : soldPlots.entrySet()) {
+            config.set("sold-plots." + entry.getKey(), entry.getValue().toString());
+        }
+
+        // Собственность
         for (var entry : ownedPlots.entrySet()) {
             String basePath = "owned." + entry.getKey().toString();
             int i = 0;
@@ -99,6 +132,7 @@ public class PropertyManager {
             }
         }
 
+        // Рассрочки (новые)
         for (var entry : installments.entrySet()) {
             String path = "installments." + entry.getKey().toString();
             InstallmentData d = entry.getValue();
@@ -114,9 +148,26 @@ public class PropertyManager {
     }
 
     /**
+     * Проверить продан ли участок
+     */
+    public boolean isPlotSold(String plotId) {
+        return soldPlots.containsKey(plotId);
+    }
+
+    /**
+     * Получить UUID владельца участка
+     */
+    public UUID getPlotOwner(String plotId) {
+        return soldPlots.get(plotId);
+    }
+
+    /**
      * Купить участок за полную стоимость
      */
     public boolean buyPlotFull(UUID uuid, String plotId, int cost, org.bukkit.entity.Player player) {
+        // Проверка: продан ли
+        if (isPlotSold(plotId)) return false;
+
         int total = ChestScanner.countTotalMaterial(player, Material.COBBLESTONE);
         if (total < cost) return false;
 
@@ -125,7 +176,10 @@ public class PropertyManager {
         List<OwnedPlot> plots = ownedPlots.computeIfAbsent(uuid, k -> new ArrayList<>());
         plots.add(new OwnedPlot(plotId, System.currentTimeMillis(), true));
 
-        // Добавляем стоимость в казну
+        // Отмечаем как проданный
+        soldPlots.put(plotId, uuid);
+
+        // Добавляем в казну
         plugin.getKaznaManager().addItem(Material.COBBLESTONE, cost);
 
         save();
@@ -133,18 +187,19 @@ public class PropertyManager {
     }
 
     /**
-     * Оценить и одобрить рассрочку
+     * Оценить рассрочку
      */
     public InstallmentResult evaluateInstallment(UUID uuid, String plotId, int cost,
                                                    org.bukkit.entity.Player player) {
-        ConfigManager cfg = plugin.getConfigManager();
-        int minIncome = cfg.getConfig().getInt("property.installment.min-income", 500);
-        double termMultiplier = cfg.getConfig().getDouble("property.installment.term-multiplier", 5);
+        if (isPlotSold(plotId)) {
+            return new InstallmentResult(false, 0, "Участок уже продан");
+        }
+
+        int minIncome = plugin.getConfig().getInt("property.installment.min-income", 500);
+        double termMultiplier = plugin.getConfig().getDouble("property.installment.term-multiplier", 5);
 
         int income = plugin.getIncomeTracker().calculateIncome(uuid);
         int totalCobble = ChestScanner.countTotalMaterial(player, Material.COBBLESTONE);
-
-        // Общий "доход" = добытое + имеющееся
         int totalIncome = income + totalCobble;
 
         if (totalIncome < minIncome) {
@@ -152,25 +207,27 @@ public class PropertyManager {
                     + " (мин: " + minIncome + ")");
         }
 
-        // Срок = доход / стоимость * множитель
         int termDays = Math.max(1, (int) (((double) totalIncome / cost) * termMultiplier));
-        termDays = Math.min(termDays, 30); // Макс 30 игровых дней
+        termDays = Math.min(termDays, 30);
 
-        return new InstallmentResult(true, termDays, "Одобрено на " + termDays + " игровых дней");
+        return new InstallmentResult(true, termDays, "Одобрено на " + termDays + " игр. дней");
     }
 
     /**
      * Создать рассрочку
      */
     public void createInstallment(UUID uuid, String plotId, int cost, int termDays) {
+        if (isPlotSold(plotId)) return;
+
         long now = System.currentTimeMillis();
-        // 1 игровой день = 20 минут реального времени
         long dueDate = now + ((long) termDays * 20 * 60 * 1000);
 
         installments.put(uuid, new InstallmentData(plotId, cost, cost, termDays, now, dueDate));
 
         List<OwnedPlot> plots = ownedPlots.computeIfAbsent(uuid, k -> new ArrayList<>());
         plots.add(new OwnedPlot(plotId, now, false));
+
+        soldPlots.put(plotId, uuid);
 
         save();
     }
