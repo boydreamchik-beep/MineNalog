@@ -1,6 +1,9 @@
 package com.mine.plugin.managers;
 
 import com.mine.plugin.MinePlugin;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -12,10 +15,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitTask;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 
 import java.io.File;
 import java.io.IOException;
@@ -30,11 +31,10 @@ public class PropertyManager implements Listener {
     private final Map<UUID, List<OwnedPlot>> ownedPlots = new HashMap<>();
     private final Map<UUID, InstallmentData> installments = new HashMap<>();
     private final Map<String, UUID> soldPlots = new HashMap<>();
-
-    // Земельный налог: UUID -> последняя оплата (timestamp)
     private final Map<UUID, Long> landTaxPaid = new HashMap<>();
 
     private BukkitTask landTaxTask;
+    private BukkitTask installmentTask;
 
     // Координаты участка №1
     public static final double PLOT1_MIN_X = -239.300;
@@ -44,7 +44,6 @@ public class PropertyManager implements Listener {
     public static final double PLOT1_MAX_Y = 87.0;
     public static final double PLOT1_MAX_Z = -43.642;
 
-    // Земельный налог: 2 стака = 128 булыжников
     public static final int LAND_TAX_AMOUNT = 128;
 
     public PropertyManager(MinePlugin plugin) {
@@ -62,7 +61,6 @@ public class PropertyManager implements Listener {
         soldPlots.clear();
         landTaxPaid.clear();
 
-        // Загрузка проданных
         if (config.contains("sold-plots")) {
             var section = config.getConfigurationSection("sold-plots");
             if (section != null) {
@@ -77,7 +75,6 @@ public class PropertyManager implements Listener {
             }
         }
 
-        // Загрузка собственности
         if (config.contains("owned")) {
             var section = config.getConfigurationSection("owned");
             if (section != null) {
@@ -100,7 +97,6 @@ public class PropertyManager implements Listener {
             }
         }
 
-        // Загрузка рассрочек
         if (config.contains("installments")) {
             var section = config.getConfigurationSection("installments");
             if (section != null) {
@@ -124,7 +120,6 @@ public class PropertyManager implements Listener {
             }
         }
 
-        // Загрузка земельного налога
         if (config.contains("land-tax-paid")) {
             var section = config.getConfigurationSection("land-tax-paid");
             if (section != null) {
@@ -178,7 +173,6 @@ public class PropertyManager implements Listener {
     // === ЗЕМЕЛЬНЫЙ НАЛОГ ===
 
     public void startLandTaxReminder() {
-        // Каждые 3 игровых дня = 3 * 24000 тиков
         long interval = 3L * 24000L;
         landTaxTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             for (var entry : soldPlots.entrySet()) {
@@ -207,15 +201,12 @@ public class PropertyManager implements Listener {
 
     public void stopLandTaxReminder() {
         if (landTaxTask != null) landTaxTask.cancel();
+        if (installmentTask != null) installmentTask.cancel();
     }
 
-    /**
-     * Оплатить земельный налог
-     */
     public boolean payLandTax(Player player) {
         UUID uuid = player.getUniqueId();
 
-        // Проверяем есть ли земля
         if (!hasAnyPlot(uuid)) return false;
 
         int cobble = ChestScanner.countTotalMaterial(player, Material.COBBLESTONE);
@@ -235,11 +226,8 @@ public class PropertyManager implements Listener {
         return plots != null && !plots.isEmpty();
     }
 
-    // === УЧАСТОК: ЗАЩИТА ===
+    // === ЗАЩИТА УЧАСТКА ===
 
-    /**
-     * Проверяет находится ли локация внутри участка №1
-     */
     public boolean isInsidePlot1(Location loc) {
         double x = loc.getX();
         double y = loc.getY();
@@ -257,9 +245,6 @@ public class PropertyManager implements Listener {
                 && z >= minZ && z <= maxZ;
     }
 
-    /**
-     * Проверяет является ли игрок владельцем участка №1
-     */
     public boolean isPlot1Owner(UUID uuid) {
         UUID owner = soldPlots.get("plot-1");
         return owner != null && owner.equals(uuid);
@@ -297,13 +282,11 @@ public class PropertyManager implements Listener {
                 && from.getBlockY() == to.getBlockY()
                 && from.getBlockZ() == to.getBlockZ()) return;
 
-        // Проверяем вход на участок
         if (isInsidePlot1(to) && !isInsidePlot1(from)) {
             Player player = event.getPlayer();
             UUID uuid = player.getUniqueId();
 
             if (!isPlot1Owner(uuid)) {
-                // Не пускаем
                 event.setTo(from);
                 player.sendMessage(Component.text("[Участок] Это частная территория! Вход запрещён.")
                         .color(NamedTextColor.RED));
@@ -348,9 +331,6 @@ public class PropertyManager implements Listener {
         return true;
     }
 
-    // Нужен импорт
-    private static org.bukkit.inventory.ItemStack dummyImport;
-
     // === РАССРОЧКА ===
 
     public InstallmentResult evaluateInstallment(UUID uuid, String plotId, int cost, Player player) {
@@ -361,12 +341,10 @@ public class PropertyManager implements Listener {
         int minIncome = plugin.getConfig().getInt("property.installment.min-income", 500);
         double termMultiplier = plugin.getConfig().getDouble("property.installment.term-multiplier", 5);
 
-        // Доход = добытое в шахте
         int income = plugin.getIncomeTracker().calculateIncome(uuid);
 
-        // Булыжник во всех сундуках и инвентаре
         int cobbleInInventory = 0;
-        for (org.bukkit.inventory.ItemStack item : player.getInventory().getContents()) {
+        for (ItemStack item : player.getInventory().getContents()) {
             if (item != null && item.getType() == Material.COBBLESTONE) {
                 cobbleInInventory += item.getAmount();
             }
@@ -381,7 +359,6 @@ public class PropertyManager implements Listener {
                     + " (мин: " + minIncome + ")");
         }
 
-        // Индивидуальный срок
         int termDays = Math.max(1, (int) (((double) totalIncome / cost) * termMultiplier));
         termDays = Math.min(termDays, 30);
 
@@ -393,7 +370,6 @@ public class PropertyManager implements Listener {
         if (isPlotSold(plotId)) return;
 
         long now = System.currentTimeMillis();
-        // 1 игровой день = 20 минут реального времени
         long dueDate = now + ((long) termDays * 20 * 60 * 1000);
 
         installments.put(uuid, new InstallmentData(plotId, cost, cost, termDays, now, dueDate));
@@ -405,9 +381,6 @@ public class PropertyManager implements Listener {
         save();
     }
 
-    /**
-     * Оплатить рассрочку
-     */
     public PayInstallmentResult payInstallment(Player player, int amount) {
         UUID uuid = player.getUniqueId();
         InstallmentData data = installments.get(uuid);
@@ -417,9 +390,8 @@ public class PropertyManager implements Listener {
 
         int actualPay = Math.min(amount, data.remaining);
 
-        // Считаем булыжник
         int cobbleInInventory = 0;
-        for (org.bukkit.inventory.ItemStack item : player.getInventory().getContents()) {
+        for (ItemStack item : player.getInventory().getContents()) {
             if (item != null && item.getType() == Material.COBBLESTONE) {
                 cobbleInInventory += item.getAmount();
             }
@@ -435,10 +407,8 @@ public class PropertyManager implements Listener {
         data.remaining -= actualPay;
 
         if (data.remaining <= 0) {
-            // Рассрочка полностью оплачена
             installments.remove(uuid);
 
-            // Отмечаем участок как оплаченный
             List<OwnedPlot> plots = ownedPlots.get(uuid);
             if (plots != null) {
                 for (OwnedPlot plot : plots) {
@@ -453,11 +423,8 @@ public class PropertyManager implements Listener {
         return PayInstallmentResult.SUCCESS;
     }
 
-    /**
-     * Начисление процентов за просроченные рассрочки
-     */
     public void startInstallmentChecker() {
-        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+        installmentTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             long now = System.currentTimeMillis();
             double overdueRate = plugin.getConfig().getDouble(
                     "property.installment.overdue-rate", 0.03);
@@ -490,7 +457,7 @@ public class PropertyManager implements Listener {
                     save();
                 }
             }
-        }, 24000L, 24000L); // Каждый игровой день
+        }, 24000L, 24000L);
     }
 
     public boolean hasPlot(UUID uuid, String plotId) {
@@ -511,9 +478,6 @@ public class PropertyManager implements Listener {
         return ownedPlots.getOrDefault(uuid, new ArrayList<>());
     }
 
-    /**
-     * Получить координаты участка как строку
-     */
     public String getPlotCoordinates(String plotId) {
         if (plotId.equals("plot-1")) {
             return "от (" + (int)PLOT1_MIN_X + ", " + (int)PLOT1_MIN_Y + ", " + (int)PLOT1_MIN_Z
