@@ -5,126 +5,115 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
-import org.bukkit.block.Barrel;
-import org.bukkit.block.Chest;
-import org.bukkit.block.ShulkerBox;
-import org.bukkit.block.TileState;
-import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.block.Container;
+import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.BiConsumer;
 
 /**
- * Сканирует сундуки, бочки и шалкеры в загруженных чанках вокруг игрока.
- * Только tile entities — не перебирает 1.6 млн блоков!
+ * Сканирует контейнеры игрока (сундуки, бочки, шалкеры) в радиусе.
+ * Оптимизированная версия: итерация только по TileEntity загруженных чанков.
+ * НЕ загружает чанки насильно — работает только с уже загруженными.
  */
 public class ChestScanner {
 
-    /** Радиус поиска чанков (в чанках) */
-    private static int getScanChunkRadius() {
-        try {
-            return MinePlugin.getInstance().getConfigManager().getScanRadiusBlocks(); // пока дефолт
-        } catch (Exception e) {
-            return 7; // ~112 блоков
-        }
-    }
+    private static final Set<Location> VISITED_DOUBLE_CHESTS = new HashSet<>();
 
-    private static boolean isContainer(BlockState state) {
-        return state instanceof Chest || state instanceof Barrel || state instanceof ShulkerBox;
-    }
-
-    private static Location inventoryKey(TileState state, Inventory inv) {
-        // Двойной сундук имеет один общий location
-        if (inv.getHolder() instanceof org.bukkit.block.DoubleChest dc) {
-            return dc.getLocation();
-        }
-        return state.getBlock().getLocation();
-    }
+    private ChestScanner() {}
 
     /**
-     * Перебрать все контейнеры рядом и применить action.
-     * action получает (BlockState, Inventory).
-     */
-    public static void forEachContainer(Player player, BiConsumer<TileState, Inventory> action) {
-        World world = player.getWorld();
-        Location loc = player.getLocation();
-
-        double radiusSq = (double) getScanChunkRadius() * 16;
-        radiusSq *= radiusSq; // чанки радиуса в блоках в квадрате
-
-        int pcx = loc.getBlockX() >> 4;
-        int pcz = loc.getBlockZ() >> 4;
-        int chunkRad = getScanChunkRadius();
-
-        Set<Location> visited = new HashSet<>();
-
-        for (int cx = pcx - chunkRad; cx <= pcx + chunkRad; cx++) {
-            for (int cz = pcz - chunkRad; cz <= pcz + chunkRad; cz++) {
-                if (!world.isChunkLoaded(cx, cz)) continue;
-                for (TileState state : world.getChunkAt(cx, cz).getTileEntities()) {
-                    if (!isContainer(state)) continue;
-                    Block block = state.getBlock();
-                    if (block.getLocation().distanceSquared(loc) > radiusSq) continue;
-
-                    // Получаем инвентарь через Container (безопасный каст)
-                    if (!(state instanceof org.bukkit.block.Container container)) continue;
-                    Inventory inv = container.getInventory();
-                    if (inv == null) continue;
-
-                    if (!visited.add(inventoryKey(state, inv))) continue; // двойник уже был
-                    action.accept(state, inv);
-                }
-            }
-        }
-    }
-
-    /**
-     * Всего материала у игрока: инвентарь + контейнеры.
+     * Подсчитать ВСЁ количество материала у игрока:
+     * инвентарь + все контейнеры в радиусе
      */
     public static int countTotalMaterial(Player player, Material material) {
-        int[] total = {TaxUtils.countInInventory(player, material)};
-        forEachContainer(player, (state, inv) -> {
-            for (var item : inv.getContents()) {
-                if (item != null && item.getType() == material) total[0] += item.getAmount();
-            }
-        });
-        return total[0];
+        int total = countInInventory(player, material);
+        total += countInNearbyContainers(player, material);
+        return total;
     }
 
     /**
-     * Только в инвентаре (быстро для GUI).
+     * Подсчитать материал в инвентаре игрока
+     */
+    public static int countInInventory(Player player, Material material) {
+        int count = 0;
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && item.getType() == material) {
+                count += item.getAmount();
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Подсчитать материал во всех контейнерах рядом (только загруженные чанки)
      */
     public static int countInNearbyContainers(Player player, Material material) {
         int[] count = {0};
         forEachContainer(player, (state, inv) -> {
-            for (var item : inv.getContents()) {
-                if (item != null && item.getType() == material) count[0] += item.getAmount();
+            for (ItemStack item : inv.getContents()) {
+                if (item != null && item.getType() == material) {
+                    count[0] += item.getAmount();
+                }
             }
         });
         return count[0];
     }
 
     /**
-     * Списать материал из инвентаря и контейнеров.
-     * @return сколько осталось списать (0 если всё ок)
+     * Удалить материал из инвентаря и контейнеров
+     * @return количество, которое НЕ удалось удалить (0 если всё успешно)
      */
     public static int removeMaterialFromAll(Player player, Material material, int amount) {
+        int remaining = removeFromInventory(player, material, amount);
+        if (remaining <= 0) return 0;
+        return removeFromNearbyContainers(player, material, remaining);
+    }
+
+    /**
+     * Удалить материал из инвентаря игрока
+     * @return остаток который не удалось удалить
+     */
+    private static int removeFromInventory(Player player, Material material, int amount) {
+        int remaining = amount;
+        for (int i = 0; i < player.getInventory().getSize(); i++) {
+            ItemStack item = player.getInventory().getItem(i);
+            if (item == null || item.getType() != material) continue;
+            
+            // Защита компаса шахты
+            if (isMineCompass(item)) continue;
+
+            if (item.getAmount() <= remaining) {
+                remaining -= item.getAmount();
+                player.getInventory().setItem(i, null);
+            } else {
+                item.setAmount(item.getAmount() - remaining);
+                remaining = 0;
+            }
+            if (remaining <= 0) break;
+        }
+        return remaining;
+    }
+
+    /**
+     * Удалить материал из контейнеров рядом
+     * @return остаток который не удалось удалить
+     */
+    private static int removeFromNearbyContainers(Player player, Material material, int amount) {
         int[] remaining = {amount};
-
-        // Сначала инвентарь
-        remaining[0] = TaxUtils.removeFromInventory(player, material, remaining[0]);
-        if (remaining[0] <= 0) return 0;
-
-        // Потом контейнеры (упорядоченно, можно остановиться когда хватит)
         forEachContainer(player, (state, inv) -> {
             if (remaining[0] <= 0) return;
             for (int i = 0; i < inv.getSize() && remaining[0] > 0; i++) {
-                var item = inv.getItem(i);
+                ItemStack item = inv.getItem(i);
                 if (item == null || item.getType() != material) continue;
+
                 if (item.getAmount() <= remaining[0]) {
                     remaining[0] -= item.getAmount();
                     inv.setItem(i, null);
@@ -134,7 +123,59 @@ public class ChestScanner {
                 }
             }
         });
-
         return remaining[0];
+    }
+
+    /**
+     * Перебрать все контейнеры в радиусе (только загруженные чанки)
+     */
+    private static void forEachContainer(Player player, BiConsumer<BlockState, Inventory> action) {
+        World world = player.getWorld();
+        Location loc = player.getLocation();
+        int scanRadius = MinePlugin.getInstance().getConfig().getInt("auto-tax.scan-radius", 100);
+        double radiusSq = (double) scanRadius * scanRadius;
+        
+        int pcx = loc.getBlockX() >> 4;
+        int pcz = loc.getBlockZ() >> 4;
+        int chunkRadius = (scanRadius + 15) >> 4;
+        
+        VISITED_DOUBLE_CHESTS.clear();
+
+        for (int cx = pcx - chunkRadius; cx <= pcx + chunkRadius; cx++) {
+            for (int cz = pcz - chunkRadius; cz <= pcz + chunkRadius; cz++) {
+                // НЕ загружаем чанки насильно!
+                if (!world.isChunkLoaded(cx, cz)) continue;
+                
+                for (BlockState state : world.getChunkAt(cx, cz).getTileEntities()) {
+                    if (!(state instanceof Container container)) continue;
+                    
+                    Block block = state.getBlock();
+                    if (block.getLocation().distanceSquared(loc) > radiusSq) continue;
+
+                    Inventory inv = container.getInventory();
+                    
+                    // Дедупликация двойных сундуков
+                    if (inv.getHolder() instanceof DoubleChest dc) {
+                        Location key = dc.getLocation();
+                        if (!VISITED_DOUBLE_CHESTS.add(key)) continue;
+                    }
+                    
+                    action.accept(state, inv);
+                }
+            }
+        }
+    }
+
+    /**
+     * Проверка является ли предмет компасом шахты
+     */
+    private static boolean isMineCompass(ItemStack item) {
+        if (item == null || item.getType() != Material.COMPASS) return false;
+        if (!item.hasItemMeta()) return false;
+        var meta = item.getItemMeta();
+        if (!meta.hasDisplayName()) return false;
+        String name = net.kyori.adventure.text.serializer.plain
+                .PlainTextComponentSerializer.plainText().serialize(meta.displayName());
+        return name.contains("Выход из шахты");
     }
 }
