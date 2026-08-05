@@ -57,6 +57,11 @@ public class MineEntryListener implements Listener {
             if (last != null && (now - last) < COOLDOWN_MS) return;
             cooldowns.put(uuid, now);
 
+            // Периодическая очистка кулдаунов вышедших игроков (защита от утечки памяти)
+            if (cooldowns.size() > 256) {
+                cooldowns.entrySet().removeIf(e -> (now - e.getValue()) > 60_000);
+            }
+
             if (mineLevelGUI.isPlayerInMine(uuid)) {
                 mineLevelGUI.openAlreadyInMineMenu(player);
             } else {

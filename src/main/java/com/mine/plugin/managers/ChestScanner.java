@@ -8,7 +8,7 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Container;
-import org.bukkit.inventory.DoubleChest;
+import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -134,7 +134,7 @@ public class ChestScanner {
     private static void forEachContainer(Player player, BiConsumer<BlockState, Inventory> action) {
         World world = player.getWorld();
         Location loc = player.getLocation();
-        int scanRadius = MinePlugin.getInstance().getConfig().getInt("auto-tax.scan-radius", 100);
+        int scanRadius = MinePlugin.getInstance().getConfigManager().getScanRadius();
         double radiusSq = (double) scanRadius * scanRadius;
         
         int pcx = loc.getBlockX() >> 4;

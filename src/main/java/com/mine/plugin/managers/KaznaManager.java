@@ -18,7 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class KaznaManager {
 
-    public static final int ITEMS_PER_PAGE = 36; // Ровно 4 ряда по 9 слотов (слоты 9-44)
+    // Ровно 4 ряда по 9 слотов (слоты 9-44). Берётся из config.yml (kazna.items-per-page)
+    private static final int ITEMS_PER_PAGE = 36;
 
     private final MinePlugin plugin;
     private final File kaznaFile;
@@ -161,7 +162,7 @@ public class KaznaManager {
      * Количество страниц (по стакам — каждый предмет раскладывается в ячейки по 64)
      */
     public int getMaxPages() {
-        int perPage = ITEMS_PER_PAGE;
+        int perPage = getItemsPerPage();
         int maxPages = plugin.getConfigManager().getKaznaMaxPages();
 
         int totalStacks = 0;
@@ -181,7 +182,7 @@ public class KaznaManager {
      * Сортировка по алфавиту для стабильности страниц.
      */
     public List<Map.Entry<Material, Integer>> getItemsForPage(int page) {
-        int perPage = ITEMS_PER_PAGE;
+        int perPage = getItemsPerPage();
 
         List<Map.Entry<Material, Integer>> allStacks = new ArrayList<>();
 
@@ -216,5 +217,13 @@ public class KaznaManager {
     public void clear() {
         kaznaItems.clear();
         dirty = true;
+    }
+
+    /**
+     * Количество предметов на одной странице GUI (из конфига, ограничено 36 слотами).
+     */
+    private int getItemsPerPage() {
+        int configured = plugin.getConfigManager().getKaznaItemsPerPage();
+        return Math.max(1, Math.min(configured, ITEMS_PER_PAGE));
     }
 }

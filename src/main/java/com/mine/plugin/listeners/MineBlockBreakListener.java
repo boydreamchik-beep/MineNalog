@@ -44,13 +44,8 @@ public class MineBlockBreakListener implements Listener {
 
         ConfigManager cfg = plugin.getConfigManager();
 
-        double bx = event.getBlock().getX();
-        double by = event.getBlock().getY();
-        double bz = event.getBlock().getZ();
-
-        if (bx < level.zoneMinX || bx > level.zoneMaxX
-                || by < level.zoneMinY || by > level.zoneMaxY
-                || bz < level.zoneMinZ || bz > level.zoneMaxZ) {
+        // Проверка зоны уровня (с учётом мира и нормализации min/max из конфига)
+        if (!level.isInZone(event.getBlock().getLocation())) {
             return;
         }
 
