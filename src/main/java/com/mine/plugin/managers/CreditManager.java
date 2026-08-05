@@ -3,10 +3,8 @@ package com.mine.plugin.managers;
 import com.mine.plugin.MinePlugin;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -22,8 +20,9 @@ public class CreditManager {
 
     private final MinePlugin plugin;
     private final File creditFile;
-    private FileConfiguration creditConfig;
-    private final Map<UUID, CreditData> credits = new HashMap<>();
+    private YamlConfiguration creditConfig;
+    private final Map<UUID, CreditData> credits = new HashMap<>(); // только main thread
+    private volatile boolean dirty = false;
     private BukkitTask reminderTask;
 
     public CreditManager(MinePlugin plugin) {
@@ -32,8 +31,9 @@ public class CreditManager {
     }
 
     public void load() {
+        creditFile.getParentFile().mkdirs();
         if (!creditFile.exists()) {
-            try { creditFile.createNewFile(); } catch (IOException e) { e.printStackTrace(); }
+            try { creditFile.createNewFile(); } catch (IOException ignored) {}
         }
         creditConfig = YamlConfiguration.loadConfiguration(creditFile);
         credits.clear();
@@ -43,56 +43,43 @@ public class CreditManager {
                 for (String uuidStr : section.getKeys(false)) {
                     try {
                         UUID uuid = UUID.fromString(uuidStr);
-                        int amount = section.getInt(uuidStr + ".amount", 0);
-                        long takenTime = section.getLong(uuidStr + ".taken_time", 0);
-                        long lastReminder = section.getLong(uuidStr + ".last_reminder", 0);
-                        int totalPaid = section.getInt(uuidStr + ".total_paid", 0);
-                        if (amount > 0) {
-                            credits.put(uuid, new CreditData(amount, takenTime, lastReminder, totalPaid));
-                        }
-                    } catch (Exception ignored) {}
+                        int amt = section.getInt(uuidStr + ".amount", 0);
+                        if (amt > 0) credits.put(uuid, new CreditData(
+                                amt,
+                                section.getLong(uuidStr + ".taken_time", System.currentTimeMillis()),
+                                section.getLong(uuidStr + ".last_reminder", System.currentTimeMillis()),
+                                section.getInt(uuidStr + ".total_paid", 0)));
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("Битая запись кредита: " + uuidStr);
+                    }
                 }
             }
         }
-    }
-
-    public void save() {
-        creditConfig = new YamlConfiguration();
-        for (var entry : credits.entrySet()) {
-            String path = "credits." + entry.getKey().toString();
-            CreditData d = entry.getValue();
-            creditConfig.set(path + ".amount", d.amount);
-            creditConfig.set(path + ".taken_time", d.takenTime);
-            creditConfig.set(path + ".last_reminder", d.lastReminder);
-            creditConfig.set(path + ".total_paid", d.totalPaid);
-        }
-        try { creditConfig.save(creditFile); } catch (IOException e) { e.printStackTrace(); }
     }
 
     public void startReminders() {
+        long intervalMs = (long) plugin.getConfigManager().getCreditInterestDays() * 24 * 60 * 60 * 1000;
         reminderTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            long now = System.currentTimeMillis();
-            ConfigManager cfg = plugin.getConfigManager();
-            double rate = cfg.getCreditInterestRate();
-            long intervalMs = cfg.getCreditInterestDays() * 24L * 60 * 60 * 1000;
+            double rate = plugin.getConfigManager().getCreditInterestRate();
+            boolean changed = false;
 
             for (var entry : credits.entrySet()) {
                 CreditData data = entry.getValue();
-                if ((now - data.lastReminder) >= intervalMs) {
+                while ((System.currentTimeMillis() - data.lastReminder) >= intervalMs) {
                     int interest = (int) Math.ceil(data.amount * rate);
                     data.amount += interest;
-                    data.lastReminder = now;
+                    data.lastReminder += intervalMs;
+                    changed = true;
 
-                    Player player = Bukkit.getPlayer(entry.getKey());
-                    if (player != null && player.isOnline()) {
-                        player.sendMessage(Component.text("[Кредит] Начислены проценты: +"
-                                        + interest + ". Долг: " + data.amount)
-                                .color(NamedTextColor.RED));
+                    Player p = Bukkit.getPlayer(entry.getKey());
+                    if (p != null && p.isOnline()) {
+                        p.sendMessage(Component.text("[Кредит] Проценты: +" + interest
+                                        + ". Долг: " + data.amount).color(NamedTextColor.RED));
                     }
-                    save();
                 }
             }
-        }, 72000L, 72000L);
+            if (changed) { dirty = true; saveSync(); }
+        }, 1200L, 72000L); // первый через минуту, потом час
     }
 
     public void stopReminders() {
@@ -102,17 +89,16 @@ public class CreditManager {
     public TakeResult takeCredit(UUID uuid, int amount) {
         if (amount <= 0) return TakeResult.INVALID_AMOUNT;
         int maxAmount = plugin.getConfigManager().getCreditMaxAmount();
-        CreditData existing = credits.get(uuid);
-        int currentDebt = existing != null ? existing.amount : 0;
+        int currentDebt = credits.containsKey(uuid) ? credits.get(uuid).amount : 0;
         if (currentDebt + amount > maxAmount) return TakeResult.EXCEEDS_LIMIT;
 
-        if (existing != null) {
-            existing.amount += amount;
+        long now = System.currentTimeMillis();
+        if (credits.containsKey(uuid)) {
+            credits.get(uuid).amount += amount;
         } else {
-            long now = System.currentTimeMillis();
             credits.put(uuid, new CreditData(amount, now, now, 0));
         }
-        save();
+        dirty = true;
         return TakeResult.SUCCESS;
     }
 
@@ -124,14 +110,15 @@ public class CreditManager {
 
         int actualPay = Math.min(amount, data.amount);
         Material currency = plugin.getConfigManager().getShopCurrency();
-        int playerAmount = countMaterial(player, currency);
-        if (playerAmount < actualPay) return PayResult.NOT_ENOUGH;
+        int playerTotal = TaxUtils.countInInventory(player, currency);
+        if (playerTotal < actualPay) return PayResult.NOT_ENOUGH;
 
-        removeMaterial(player, currency, actualPay);
+        TaxUtils.removeFromInventory(player, currency, actualPay);
         data.amount -= actualPay;
         data.totalPaid += actualPay;
         if (data.amount <= 0) credits.remove(uuid);
-        save();
+
+        dirty = true;
         return PayResult.SUCCESS;
     }
 
@@ -139,56 +126,34 @@ public class CreditManager {
         Material currency = plugin.getConfigManager().getShopCurrency();
         int full = amount / 64;
         int rem = amount % 64;
-        for (int i = 0; i < full; i++) {
-            var overflow = player.getInventory().addItem(new ItemStack(currency, 64));
-            for (ItemStack item : overflow.values())
-                player.getWorld().dropItemNaturally(player.getLocation(), item);
-        }
-        if (rem > 0) {
-            var overflow = player.getInventory().addItem(new ItemStack(currency, rem));
-            for (ItemStack item : overflow.values())
-                player.getWorld().dropItemNaturally(player.getLocation(), item);
-        }
+        for (int i = 0; i < full; i++)
+            TaxUtils.giveItemOrDrop(player, new ItemStack(currency, 64));
+        if (rem > 0) TaxUtils.giveItemOrDrop(player, new ItemStack(currency, rem));
     }
 
     public CreditData getCreditData(UUID uuid) { return credits.get(uuid); }
-    public boolean hasCredit(UUID uuid) {
-        CreditData d = credits.get(uuid);
-        return d != null && d.amount > 0;
-    }
+    public boolean hasCredit(UUID uuid) { return credits.containsKey(uuid) && credits.get(uuid).amount > 0; }
 
-    private int countMaterial(Player player, Material mat) {
-        int count = 0;
-        for (ItemStack item : player.getInventory().getContents())
-            if (item != null && item.getType() == mat) count += item.getAmount();
-        return count;
-    }
-
-    private void removeMaterial(Player player, Material mat, int amount) {
-        int remaining = amount;
-        for (int i = 0; i < player.getInventory().getSize(); i++) {
-            ItemStack item = player.getInventory().getItem(i);
-            if (item == null || item.getType() != mat) continue;
-            if (com.mine.plugin.listeners.CompassListener.isMineCompass(item)) continue;
-            if (item.getAmount() <= remaining) {
-                remaining -= item.getAmount();
-                player.getInventory().setItem(i, null);
-            } else {
-                item.setAmount(item.getAmount() - remaining);
-                remaining = 0;
-            }
-            if (remaining <= 0) break;
+    /** Для onDisable. */
+    public void saveSync() {
+        var snapshot = new HashMap<>(credits);
+        dirty = false;
+        var cfg = new YamlConfiguration();
+        for (var e : snapshot.entrySet()) {
+            String path = "credits." + e.getKey();
+            var d = e.getValue();
+            cfg.set(path + ".amount", d.amount);
+            cfg.set(path + ".taken_time", d.takenTime);
+            cfg.set(path + ".last_reminder", d.lastReminder);
+            cfg.set(path + ".total_paid", d.totalPaid);
         }
+        try { cfg.save(creditFile); } catch (IOException e) { e.printStackTrace(); }
     }
 
     public static class CreditData {
-        public int amount;
-        public long takenTime;
-        public long lastReminder;
-        public int totalPaid;
-        public CreditData(int amount, long takenTime, long lastReminder, int totalPaid) {
-            this.amount = amount; this.takenTime = takenTime;
-            this.lastReminder = lastReminder; this.totalPaid = totalPaid;
+        public int amount; public long takenTime, lastReminder, totalPaid;
+        public CreditData(int a, long tt, long lr, int tp) {
+            amount=a; takenTime=tt; lastReminder=lr; totalPaid=tp;
         }
     }
 
