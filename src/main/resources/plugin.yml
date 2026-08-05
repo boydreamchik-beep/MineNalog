@@ -1,7 +1,7 @@
 name: MinePlugin
 version: 6.0.0
 main: com.mine.plugin.MinePlugin
-api-version: '1.21.11'
+api-version: '1.21.10'
 description: Полная система государства
 
 commands:
