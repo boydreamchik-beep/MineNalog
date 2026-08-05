@@ -1,13 +1,16 @@
 package com.mine.plugin.managers;
 
 import com.mine.plugin.MinePlugin;
+import com.mine.plugin.utils.TaxUtils;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
@@ -235,19 +238,17 @@ public class AchievementManager {
 
             // Выдать награду
             if (achievement.reward > 0) {
-                plugin.getKaznaManager().addItem(
-                        plugin.getConfigManager().getShopCurrency(),
-                        -achievement.reward); // Минус из казны = выдача игроку
-                for (int i = 0; i < achievement.reward / 64; i++) {
-                    player.getInventory().addItem(
-                            new org.bukkit.inventory.ItemStack(
-                                    plugin.getConfigManager().getShopCurrency(), 64));
+                Material currency = plugin.getConfigManager().getShopCurrency();
+                int totalReward = achievement.reward;
+
+                // Выдаём стаками по 64
+                while (totalReward >= 64) {
+                    TaxUtils.giveItemOrDrop(player, new ItemStack(currency, 64));
+                    totalReward -= 64;
                 }
-                int remainder = achievement.reward % 64;
-                if (remainder > 0) {
-                    player.getInventory().addItem(
-                            new org.bukkit.inventory.ItemStack(
-                                    plugin.getConfigManager().getShopCurrency(), remainder));
+                // Остаток
+                if (totalReward > 0) {
+                    TaxUtils.giveItemOrDrop(player, new ItemStack(currency, totalReward));
                 }
             }
 

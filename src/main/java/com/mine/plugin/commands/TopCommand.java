@@ -1,7 +1,6 @@
 package com.mine.plugin.commands;
 
 import com.mine.plugin.MinePlugin;
-import com.mine.plugin.managers.AchievementManager;
 import com.mine.plugin.managers.LeaderboardManager;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -17,7 +16,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 
 public class TopCommand implements CommandExecutor, TabCompleter {
 
