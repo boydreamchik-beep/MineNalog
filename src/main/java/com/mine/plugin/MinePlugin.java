@@ -30,6 +30,7 @@ public class MinePlugin extends JavaPlugin {
     private TaxCollector taxCollector;
     private NPCListener npcListener;
     private AchievementManager achievementManager;
+    private DailyBonusManager dailyBonusManager;
 
     @Override
     public void onEnable() {
@@ -59,6 +60,9 @@ public class MinePlugin extends JavaPlugin {
 
         achievementManager = new AchievementManager(this);
         achievementManager.load();
+
+        dailyBonusManager = new DailyBonusManager(this);
+        dailyBonusManager.load();
 
         taxTracker = new TaxTracker();
         freezeManager = new FreezeManager(this);
@@ -156,6 +160,10 @@ public class MinePlugin extends JavaPlugin {
             achievementManager.save();
             achievementManager.stopAutoSave();
         }
+        if (dailyBonusManager != null) {
+            dailyBonusManager.save();
+            dailyBonusManager.stopAutoSave();
+        }
         if (kaznaManager != null) kaznaManager.stopAutoSave();
         if (scoreboardManager != null) scoreboardManager.stop();
         if (taxCollector != null) taxCollector.stop();
@@ -198,6 +206,7 @@ public class MinePlugin extends JavaPlugin {
     public PropertyManager getPropertyManager() { return propertyManager; }
     public TaxCollector getTaxCollector() { return taxCollector; }
     public AchievementManager getAchievementManager() { return achievementManager; }
+    public DailyBonusManager getDailyBonusManager() { return dailyBonusManager; }
 
     private static class ReloadCommand implements CommandExecutor {
         private final MinePlugin plugin;

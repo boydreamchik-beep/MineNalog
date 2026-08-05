@@ -211,6 +211,9 @@ public class MineLevelGUI implements Listener {
                     // Проверка достижений за посещение
                     plugin.getAchievementManager().checkMineVisit(uuid);
 
+                    // Ежедневный бонус
+                    plugin.getDailyBonusManager().tryClaimBonus(player);
+
                     TaxUtils.playTeleportSound(player);
                     player.sendMessage(Component.empty());
                     player.sendMessage(Component.text("==============================")

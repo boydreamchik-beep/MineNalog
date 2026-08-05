@@ -1,6 +1,7 @@
 package com.mine.plugin.commands;
 
 import com.mine.plugin.MinePlugin;
+import com.mine.plugin.managers.DailyBonusManager;
 import com.mine.plugin.managers.PassportManager;
 import com.mine.plugin.managers.PassportManager.PassportData;
 import com.mine.plugin.managers.IncomeTracker;
@@ -214,6 +215,11 @@ public class PassportCommand implements CommandExecutor, TabCompleter {
                 .color(NamedTextColor.DARK_RED)
                 .append(Component.text(String.valueOf(plugin.getIncomeTracker().getMineVisits(player.getUniqueId())))
                         .color(NamedTextColor.AQUA)));
+        DailyBonusManager.BonusData bonus = plugin.getDailyBonusManager().getBonusData(player.getUniqueId());
+        player.sendMessage(Component.text("│  Серия бонусов: ")
+                .color(NamedTextColor.DARK_RED)
+                .append(Component.text((bonus.streak + 1) + " день 🔥")
+                        .color(NamedTextColor.GOLD)));
         player.sendMessage(Component.text("└──────────────────────────────────────┘")
                 .color(NamedTextColor.DARK_RED));
         player.sendMessage(Component.empty());
