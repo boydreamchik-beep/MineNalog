@@ -112,8 +112,7 @@ public class PassportCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        String birthPlace = plugin.getConfig().getString("passport.default-birth-place",
-                "Topicus, Энем");
+        String birthPlace = plugin.getConfigManager().getPassportBirthPlace();
 
         PassportData data = new PassportData();
         data.lastName = lastName;

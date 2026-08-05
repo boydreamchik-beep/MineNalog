@@ -236,7 +236,13 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
         int amount;
 
         if (args[1].equalsIgnoreCase("all")) {
-            amount = cm.getCreditData(uuid).amount;
+            CreditData allData = cm.getCreditData(uuid);
+            amount = allData != null ? allData.amount : 0;
+            if (amount <= 0) {
+                player.sendMessage(Component.text("[Кредит] У вас нет кредита!")
+                        .color(NamedTextColor.GREEN));
+                return;
+            }
         } else {
             try {
                 if (args[1].toLowerCase().endsWith("s")) {

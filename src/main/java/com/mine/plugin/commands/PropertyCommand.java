@@ -87,7 +87,13 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
         int amount;
 
         if (args[1].equalsIgnoreCase("all")) {
-            amount = pm.getInstallment(uuid).remaining;
+            PropertyManager.InstallmentData allData = pm.getInstallment(uuid);
+            amount = allData != null ? allData.remaining : 0;
+            if (amount <= 0) {
+                player.sendMessage(Component.text("[Рассрочка] У вас нет активной рассрочки!")
+                        .color(NamedTextColor.GREEN));
+                return;
+            }
         } else {
             try {
                 if (args[1].toLowerCase().endsWith("s")) {
@@ -382,8 +388,8 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
             plot = new ItemStack(Material.GRASS_BLOCK);
             plotMeta = plot.getItemMeta();
 
-            int price = plugin.getConfig().getInt("property.plots.plot-1.price-per-block", 32);
-            int blocks = plugin.getConfig().getInt("property.plots.plot-1.surface-blocks", 1);
+            int price = plugin.getConfigManager().getPlot1PricePerBlock();
+            int blocks = plugin.getConfigManager().getPlot1SurfaceBlocks();
             int totalPrice = price * blocks;
 
             // Считаем всё (инвентарь + сундуки) для покупки
@@ -478,8 +484,8 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                 return;
             }
 
-            int price = plugin.getConfig().getInt("property.plots.plot-1.price-per-block", 32);
-            int blocks = plugin.getConfig().getInt("property.plots.plot-1.surface-blocks", 1);
+            int price = plugin.getConfigManager().getPlot1PricePerBlock();
+            int blocks = plugin.getConfigManager().getPlot1SurfaceBlocks();
             int totalPrice = price * blocks;
 
             if (event.isLeftClick()) {
