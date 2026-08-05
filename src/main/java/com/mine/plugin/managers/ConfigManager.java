@@ -1,82 +1,109 @@
 package com.mine.plugin.managers;
 
 import com.mine.plugin.MinePlugin;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
+/**
+ * Единая точка чтения config.yml.
+ *
+ * Исправления v6.0.0:
+ *  - Добавлены миры (шахта, генераторы, NPC, участок)
+ *  - kazna.items-per-page ограничен 36 (реальное число слотов GUI)
+ *  - Границы участка №1 читаются из конфига
+ *  - Земельный налог, длительность игрового дня, радиус сканирования — из конфига
+ *  - Валидация значений (нет деления на ноль и отрицательных интервалов)
+ */
 public class ConfigManager {
 
     private final MinePlugin plugin;
     private FileConfiguration config;
 
-    // === ТОЧКА ВХОДА ===
-    private double entryX, entryY, entryZ, entryRadius;
-    private String mineWorldName = "world";
+    // Миры
+    private String mainWorldName;
+    private String mineWorldName;
+    private String propertyWorldName;
 
-    // === УРОВНИ ===
+    // Точка входа
+    private double entryX, entryY, entryZ, entryRadius;
+
+    // Уровни
     private final List<LevelConfig> levels = new ArrayList<>();
 
-    // === ГЕНЕРАТОРЫ ===
+    // Генераторы
     private final List<GeneratorConfig> generators = new ArrayList<>();
     private long regenDelayTicks;
     private final List<Material> generatorBlocks = new ArrayList<>();
 
-    // === НАЛОГИ ===
+    // Налоги
     private final Set<Material> allowedBlocks = new HashSet<>();
     private final Set<Material> treasuryOres = new HashSet<>();
     private final Set<Material> taxAsOriginal = new HashSet<>();
 
-    // === МАГАЗИН ===
+    // Магазин
     private final List<ShopItemConfig> shopItems = new ArrayList<>();
     private Material shopCurrency;
     private String shopCurrencyName;
 
-    // === КРЕДИТ ===
+    // Кредит
     private int creditMaxAmount;
     private double creditInterestRate;
     private int creditInterestDays;
     private boolean creditRequirePassport;
 
-    // === КАЗНА ===
-    private int kaznaItemsPerPage = 36; // ← ИСПРАВЛЕНО с 45 на 36
+    // Казна
+    private int kaznaItemsPerPage;
     private int kaznaMaxPages;
 
-    // === ТАБЛО ===
+    // Табло
     private boolean scoreboardEnabled;
     private String scoreboardTitle;
     private int scoreboardUpdateInterval;
     private final List<String> scoreboardLines = new ArrayList<>();
 
-    // === ПАСПОРТ ===
-    private String passportDefaultBirthPlace;
+    // Паспорт
+    private String passportBirthPlace;
+    private String passportCityName;
 
-    // === ИМУЩЕСТВО ===
-    private double propertyNpcX, propertyNpcY, propertyNpcZ;
-    private String propertyNpcWorld = "world";
+    // Имущество: NPC
+    private double npcX, npcY, npcZ;
 
+    // Имущество: участок №1
     private double plot1MinX, plot1MinY, plot1MinZ;
     private double plot1MaxX, plot1MaxY, plot1MaxZ;
     private int plot1PricePerBlock;
     private int plot1SurfaceBlocks;
+    private String plot1Name;
 
+    // Имущество: рассрочка
     private int installmentMinIncome;
     private double installmentOverdueRate;
     private double installmentTermMultiplier;
+    private int installmentMaxTermDays;
 
-    // === АВТОНАЛОГ ===
+    // Имущество: земельный налог
+    private int landTaxAmount;
+    private int landTaxIntervalGameDays;
+
+    // Автоналог
     private boolean autoTaxEnabled;
     private double autoTaxRate;
     private int autoTaxIntervalGameDays;
     private Material autoTaxCurrency;
 
-    // === CHEST SCANNER ===
-    private int scanRadiusBlocks = 100; // чанков, ~7-8
+    // Сканирование контейнеров
+    private int scanRadius;
+    private boolean scanLoadedChunksOnly;
 
-    // === МИР ===
-    private String mainWorldName = "world";
+    // Время
+    private int realMinutesPerGameDay;
 
     public ConfigManager(MinePlugin plugin) {
         this.plugin = plugin;
@@ -99,8 +126,12 @@ public class ConfigManager {
         loadPassport();
         loadProperty();
         loadAutoTax();
+        loadScan();
+        loadTime();
 
-        plugin.getLogger().info("Конфиг загружен успешно.");
+        plugin.getLogger().info("Конфиг загружен. Уровней: " + levels.size()
+                + ", генераторов: " + generators.size()
+                + ", товаров: " + shopItems.size());
     }
 
     public void reload() {
@@ -115,12 +146,18 @@ public class ConfigManager {
         load();
     }
 
-    public FileConfiguration getConfig() { return config; }
+    public FileConfiguration getConfig() {
+        return config;
+    }
+
+    // =====================================================
+    // ЗАГРУЗКА СЕКЦИЙ
+    // =====================================================
 
     private void loadWorlds() {
-        mainWorldName = config.getString("world", "world");
-        mineWorldName = mainWorldName; // по умолчанию тот же
-        mineWorldName = config.getString("entry-point.world", mainWorldName);
+        mainWorldName = config.getString("worlds.main", "world");
+        mineWorldName = config.getString("worlds.mine", mainWorldName);
+        propertyWorldName = config.getString("worlds.property", mainWorldName);
     }
 
     private void loadEntryPoint() {
@@ -132,7 +169,10 @@ public class ConfigManager {
 
     private void loadLevels() {
         ConfigurationSection levelsSection = config.getConfigurationSection("levels");
-        if (levelsSection == null) return;
+        if (levelsSection == null) {
+            plugin.getLogger().warning("Секция 'levels' не найдена в config.yml!");
+            return;
+        }
 
         for (String key : levelsSection.getKeys(false)) {
             ConfigurationSection sec = levelsSection.getConfigurationSection(key);
@@ -143,26 +183,20 @@ public class ConfigManager {
             level.enabled = sec.getBoolean("enabled", false);
             level.name = sec.getString("name", key);
             level.height = sec.getInt("height", 43);
-            level.teleportX = sec.getDouble("teleport.x", 0);
-            level.teleportY = sec.getDouble("teleport.y", 0);
-            level.teleportZ = sec.getDouble("teleport.z", 0);
-            level.taxPercent = sec.getInt("tax-percent", 20);
-
-            // Зона
-            ConfigurationSection zone = sec.getConfigurationSection("zone");
-            if (zone != null) {
-                level.zoneMinX = zone.getDouble("min-x", -280);
-                level.zoneMaxX = zone.getDouble("max-x", -180);
-                level.zoneMinY = zone.getDouble("min-y", 30);
-                level.zoneMaxY = zone.getDouble("max-y", 50);
-                level.zoneMinZ = zone.getDouble("min-z", -120);
-                level.zoneMaxZ = zone.getDouble("max-z", -20);
-            } else {
-                level.enabled = false;
-            }
-
-            // Мир (можно указать для каждого уровня отдельно)
             level.worldName = sec.getString("world", mineWorldName);
+
+            level.teleportX = sec.getDouble("teleport.x", 0);
+            level.teleportY = sec.getDouble("teleport.y", 64);
+            level.teleportZ = sec.getDouble("teleport.z", 0);
+
+            level.taxPercent = Math.max(0, Math.min(100, sec.getInt("tax-percent", 20)));
+
+            level.zoneMinX = sec.getDouble("zone.min-x", -280);
+            level.zoneMaxX = sec.getDouble("zone.max-x", -180);
+            level.zoneMinY = sec.getDouble("zone.min-y", 30);
+            level.zoneMaxY = sec.getDouble("zone.max-y", 50);
+            level.zoneMinZ = sec.getDouble("zone.min-z", -120);
+            level.zoneMaxZ = sec.getDouble("zone.max-z", -20);
 
             levels.add(level);
         }
@@ -172,19 +206,22 @@ public class ConfigManager {
         ConfigurationSection genSection = config.getConfigurationSection("generators");
         if (genSection == null) return;
 
-        regenDelayTicks = Math.max(1, genSection.getLong("regen-delay-ticks", 1));
+        regenDelayTicks = Math.max(1L, genSection.getLong("regen-delay-ticks", 1));
 
-        List<String> blockNames = genSection.getStringList("blocks");
-        for (String name : blockNames) {
+        for (String name : genSection.getStringList("blocks")) {
             try {
                 generatorBlocks.add(Material.valueOf(name.toUpperCase()));
             } catch (IllegalArgumentException e) {
                 plugin.getLogger().warning("Неизвестный блок генератора: " + name);
             }
         }
+        if (generatorBlocks.isEmpty()) {
+            generatorBlocks.add(Material.STONE);
+        }
 
         for (String key : genSection.getKeys(false)) {
             if (key.equals("regen-delay-ticks") || key.equals("blocks")) continue;
+
             ConfigurationSection sec = genSection.getConfigurationSection(key);
             if (sec == null) continue;
 
@@ -194,42 +231,41 @@ public class ConfigManager {
             gen.x = sec.getInt("x", 0);
             gen.y = sec.getInt("y", 42);
             gen.z = sec.getInt("z", 0);
-            gen.worldName = sec.getString("world", mainWorldName);
+            gen.worldName = sec.getString("world", mineWorldName);
 
             generators.add(gen);
         }
     }
 
     private void loadTax() {
-        List<String> allowed = config.getStringList("tax.allowed-blocks");
-        for (String name : allowed) {
-            try { allowedBlocks.add(Material.valueOf(name.toUpperCase())); }
-            catch (IllegalArgumentException e) {
+        for (String name : config.getStringList("tax.allowed-blocks")) {
+            try {
+                allowedBlocks.add(Material.valueOf(name.toUpperCase()));
+            } catch (IllegalArgumentException e) {
                 plugin.getLogger().warning("Неизвестный блок в allowed-blocks: " + name);
             }
         }
 
-        List<String> ores = config.getStringList("tax.treasury-ores");
-        for (String name : ores) {
-            try { treasuryOres.add(Material.valueOf(name.toUpperCase())); }
-            catch (IllegalArgumentException e) {
-                plugin.getLogger().warning("Неизвестная руда: " + name);
+        for (String name : config.getStringList("tax.treasury-ores")) {
+            try {
+                treasuryOres.add(Material.valueOf(name.toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                plugin.getLogger().warning("Неизвестная руда в treasury-ores: " + name);
             }
         }
 
-        List<String> taxOrig = config.getStringList("tax.tax-as-original");
-        for (String name : taxOrig) {
-            try { taxAsOriginal.add(Material.valueOf(name.toUpperCase())); }
-            catch (IllegalArgumentException e) {
+        for (String name : config.getStringList("tax.tax-as-original")) {
+            try {
+                taxAsOriginal.add(Material.valueOf(name.toUpperCase()));
+            } catch (IllegalArgumentException e) {
                 plugin.getLogger().warning("Неизвестный блок в tax-as-original: " + name);
             }
         }
     }
 
     private void loadShop() {
-        String currencyStr = config.getString("shop.currency", "COBBLESTONE");
-        try { shopCurrency = Material.valueOf(currencyStr.toUpperCase()); }
-        catch (IllegalArgumentException e) { shopCurrency = Material.COBBLESTONE; }
+        shopCurrency = parseMaterial(config.getString("shop.currency", "COBBLESTONE"),
+                Material.COBBLESTONE);
         shopCurrencyName = config.getString("shop.currency-name", "Булыжник");
 
         ConfigurationSection itemsSection = config.getConfigurationSection("shop.items");
@@ -239,98 +275,124 @@ public class ConfigManager {
             ConfigurationSection sec = itemsSection.getConfigurationSection(key);
             if (sec == null) continue;
 
+            String matStr = sec.getString("material", "STONE");
+            Material material;
+            try {
+                material = Material.valueOf(matStr.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                plugin.getLogger().warning("Неизвестный материал в магазине: " + matStr);
+                continue;
+            }
+
             ShopItemConfig item = new ShopItemConfig();
             item.id = key;
             item.name = sec.getString("name", key);
-            String matStr = sec.getString("material", "STONE");
-            try { item.material = Material.valueOf(matStr.toUpperCase()); }
-            catch (IllegalArgumentException e) {
-                plugin.getLogger().warning("Неизвестный материал в магазине: " + matStr); continue;
-            }
-            item.price = Math.max(0, sec.getInt("price", 10));
+            item.material = material;
+            item.price = Math.max(1, sec.getInt("price", 10));
+            item.amount = Math.max(1, sec.getInt("amount", 1));
             item.description = sec.getString("description", "");
+
             shopItems.add(item);
         }
     }
 
     private void loadCredit() {
         creditMaxAmount = Math.max(1, config.getInt("credit.max-amount", 6400));
-        creditInterestRate = Math.max(0, config.getDouble("credit.interest-rate", 0.03));
+        creditInterestRate = Math.max(0.0, config.getDouble("credit.interest-rate", 0.03));
         creditInterestDays = Math.max(1, config.getInt("credit.interest-interval-days", 3));
         creditRequirePassport = config.getBoolean("credit.require-passport", true);
     }
 
     private void loadKazna() {
-        kaznaItemsPerPage = Math.min(Math.max(1, config.getInt("kazna.items-per-page", 36)), 54 - 18);
+        int raw = config.getInt("kazna.items-per-page", 36);
+        kaznaItemsPerPage = Math.max(1, Math.min(36, raw));
+        if (raw > 36) {
+            plugin.getLogger().warning("kazna.items-per-page уменьшен до 36 (реальное число слотов GUI).");
+        }
         kaznaMaxPages = Math.max(1, config.getInt("kazna.max-pages", 100));
     }
 
     private void loadScoreboard() {
         scoreboardEnabled = config.getBoolean("scoreboard.enabled", true);
-        scoreboardTitle = config.getString("scoreboard.title", "Topicus");
+        scoreboardTitle = config.getString("scoreboard.title", "&6Topicus");
         scoreboardUpdateInterval = Math.max(1, config.getInt("scoreboard.update-interval", 40));
         scoreboardLines.addAll(config.getStringList("scoreboard.lines"));
     }
 
     private void loadPassport() {
-        passportDefaultBirthPlace = config.getString("passport.default-birth-place", "Topicus, Энем");
+        passportBirthPlace = config.getString("passport.default-birth-place", "Topicus, Энем");
+        passportCityName = config.getString("passport.city-name", "Энем");
     }
 
     private void loadProperty() {
-        ConfigurationSection npcSec = config.getConfigurationSection("property.npc");
-        if (npcSec != null) {
-            propertyNpcX = npcSec.getDouble("x", -204.304);
-            propertyNpcY = npcSec.getDouble("y", 66.0);
-            propertyNpcZ = npcSec.getDouble("z", -24.418);
-            propertyNpcWorld = npcSec.getString("world", mainWorldName);
-        }
+        npcX = config.getDouble("property.npc.x", -204.304);
+        npcY = config.getDouble("property.npc.y", 66.0);
+        npcZ = config.getDouble("property.npc.z", -24.418);
 
-        // Участок №1
-        ConfigurationSection plotSec = config.getConfigurationSection("property.plots.plot-1");
-        if (plotSec != null) {
-            plot1MinX = plotSec.getDouble("min-x", -239.300);
-            plot1MinY = plotSec.getDouble("min-y", 64.0);
-            plot1MinZ = plotSec.getDouble("min-z", -63.525);
-            plot1MaxX = plotSec.getDouble("max-x", -229.458);
-            plot1MaxY = plotSec.getDouble("max-y", 87.0);
-            plot1MaxZ = plotSec.getDouble("max-z", -43.642);
-            plot1PricePerBlock = Math.max(1, plotSec.getInt("price-per-block", 32));
-            plot1SurfaceBlocks = Math.max(1, plotSec.getInt("surface-blocks", 1));
+        ConfigurationSection plot = config.getConfigurationSection("property.plots.plot-1");
+        if (plot != null) {
+            plot1Name = plot.getString("name", "Участок №1");
+            plot1MinX = plot.getDouble("min.x", -239.300);
+            plot1MinY = plot.getDouble("min.y", 64.0);
+            plot1MinZ = plot.getDouble("min.z", -63.525);
+            plot1MaxX = plot.getDouble("max.x", -229.458);
+            plot1MaxY = plot.getDouble("max.y", 87.0);
+            plot1MaxZ = plot.getDouble("max.z", -43.642);
+            plot1PricePerBlock = Math.max(1, plot.getInt("price-per-block", 32));
+            plot1SurfaceBlocks = Math.max(1, plot.getInt("surface-blocks", 1));
         } else {
-            // Fallback старого формата
+            plot1Name = "Участок №1";
             plot1MinX = -239.300; plot1MinY = 64.0; plot1MinZ = -63.525;
             plot1MaxX = -229.458; plot1MaxY = 87.0; plot1MaxZ = -43.642;
-            plot1PricePerBlock = 32; plot1SurfaceBlocks = 1;
+            plot1PricePerBlock = 32;
+            plot1SurfaceBlocks = 1;
         }
 
-        // Рассрочка
-        ConfigurationSection instSec = config.getConfigurationSection("property.installment");
-        if (instSec != null) {
-            installmentMinIncome = instSec.getInt("min-income", 500);
-            installmentOverdueRate = Math.max(0, instSec.getDouble("overdue-rate", 0.03));
-            installmentTermMultiplier = Math.max(0.1, instSec.getDouble("term-multiplier", 5));
-        } else {
-            installmentMinIncome = 500; installmentOverdueRate = 0.03; installmentTermMultiplier = 5;
-        }
+        installmentMinIncome = Math.max(0, config.getInt("property.installment.min-income", 500));
+        installmentOverdueRate = Math.max(0.0, config.getDouble("property.installment.overdue-rate", 0.03));
+        installmentTermMultiplier = Math.max(0.1, config.getDouble("property.installment.term-multiplier", 5.0));
+        installmentMaxTermDays = Math.max(1, config.getInt("property.installment.max-term-days", 30));
+
+        landTaxAmount = Math.max(1, config.getInt("property.land-tax.amount", 128));
+        landTaxIntervalGameDays = Math.max(1, config.getInt("property.land-tax.interval-game-days", 3));
     }
 
     private void loadAutoTax() {
         autoTaxEnabled = config.getBoolean("auto-tax.enabled", true);
-        autoTaxRate = Math.max(0, Math.min(1, config.getDouble("auto-tax.rate", 0.20)));
+        autoTaxRate = Math.max(0.0, Math.min(1.0, config.getDouble("auto-tax.rate", 0.20)));
         autoTaxIntervalGameDays = Math.max(1, config.getInt("auto-tax.interval-game-days", 3));
-        String cur = config.getString("auto-tax.currency", "COBBLESTONE");
-        try { autoTaxCurrency = Material.valueOf(cur.toUpperCase()); }
-        catch (Exception e) { autoTaxCurrency = Material.COBBLESTONE; }
-
-        scanRadiusBlocks = config.getInt("storage-scan.radius", 100);
+        autoTaxCurrency = parseMaterial(config.getString("auto-tax.currency", "COBBLESTONE"),
+                Material.COBBLESTONE);
     }
 
-    // ============================================
+    private void loadScan() {
+        scanRadius = Math.max(8, Math.min(256, config.getInt("storage-scan.radius", 100)));
+        scanLoadedChunksOnly = config.getBoolean("storage-scan.loaded-chunks-only", true);
+    }
+
+    private void loadTime() {
+        realMinutesPerGameDay = Math.max(1, config.getInt("game-time.real-minutes-per-game-day", 20));
+    }
+
+    private Material parseMaterial(String name, Material fallback) {
+        if (name == null) return fallback;
+        try {
+            return Material.valueOf(name.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            plugin.getLogger().warning("Неизвестный материал: " + name + " → " + fallback.name());
+            return fallback;
+        }
+    }
+
+    // =====================================================
     // ГЕТТЕРЫ
-    // ============================================
+    // =====================================================
 
     public String getMainWorldName() { return mainWorldName; }
     public String getMineWorldName() { return mineWorldName; }
+    public String getPropertyWorldName() { return propertyWorldName; }
+    public String getPlot1World() { return propertyWorldName; }
+    public String getNpcWorldName() { return propertyWorldName; }
 
     public double getEntryX() { return entryX; }
     public double getEntryY() { return entryY; }
@@ -368,13 +430,14 @@ public class ConfigManager {
     public int getScoreboardUpdateInterval() { return scoreboardUpdateInterval; }
     public List<String> getScoreboardLines() { return scoreboardLines; }
 
-    public String getPassportBirthPlace() { return passportDefaultBirthPlace; }
+    public String getPassportBirthPlace() { return passportBirthPlace; }
+    public String getPassportCityName() { return passportCityName; }
 
-    public double getPropertyNpcX() { return propertyNpcX; }
-    public double getPropertyNpcY() { return propertyNpcY; }
-    public double getPropertyNpcZ() { return propertyNpcZ; }
-    public String getPropertyNpcWorld() { return propertyNpcWorld; }
+    public double getNpcX() { return npcX; }
+    public double getNpcY() { return npcY; }
+    public double getNpcZ() { return npcZ; }
 
+    public String getPlot1Name() { return plot1Name; }
     public double getPlot1MinX() { return plot1MinX; }
     public double getPlot1MinY() { return plot1MinY; }
     public double getPlot1MinZ() { return plot1MinZ; }
@@ -383,43 +446,65 @@ public class ConfigManager {
     public double getPlot1MaxZ() { return plot1MaxZ; }
     public int getPlot1PricePerBlock() { return plot1PricePerBlock; }
     public int getPlot1SurfaceBlocks() { return plot1SurfaceBlocks; }
+    public int getPlot1TotalPrice() { return plot1PricePerBlock * plot1SurfaceBlocks; }
 
     public int getInstallmentMinIncome() { return installmentMinIncome; }
     public double getInstallmentOverdueRate() { return installmentOverdueRate; }
     public double getInstallmentTermMultiplier() { return installmentTermMultiplier; }
+    public int getInstallmentMaxTermDays() { return installmentMaxTermDays; }
+
+    public int getLandTaxAmount() { return landTaxAmount; }
+    public int getLandTaxIntervalGameDays() { return landTaxIntervalGameDays; }
 
     public boolean isAutoTaxEnabled() { return autoTaxEnabled; }
     public double getAutoTaxRate() { return autoTaxRate; }
     public int getAutoTaxIntervalGameDays() { return autoTaxIntervalGameDays; }
     public Material getAutoTaxCurrency() { return autoTaxCurrency; }
 
-    public int getScanRadiusBlocks() { return scanRadiusBlocks; }
+    public int getScanRadius() { return scanRadius; }
+    public boolean isScanLoadedChunksOnly() { return scanLoadedChunksOnly; }
 
-    // ============================================
-    // КЛАССЫ
-    // ============================================
+    public int getRealMinutesPerGameDay() { return realMinutesPerGameDay; }
+
+    /** Длительность одного игрового дня в миллисекундах реального времени. */
+    public long getGameDayMillis() {
+        return (long) realMinutesPerGameDay * 60L * 1000L;
+    }
+
+    /** Длительность одного игрового дня в тиках. */
+    public long getGameDayTicks() {
+        return (long) realMinutesPerGameDay * 60L * 20L;
+    }
+
+    // =====================================================
+    // КЛАССЫ КОНФИГА
+    // =====================================================
 
     public static class LevelConfig {
         public String id;
         public boolean enabled;
         public String name;
         public int height;
+        public String worldName;
         public double teleportX, teleportY, teleportZ;
         public int taxPercent;
         public double zoneMinX, zoneMaxX, zoneMinY, zoneMaxY, zoneMinZ, zoneMaxZ;
-        public String worldName; // ← НОВОЕ
 
+        /** Каждый N-й блок уходит в налог. Integer.MAX_VALUE = налога нет. */
         public int getTaxEvery() {
             if (taxPercent <= 0) return Integer.MAX_VALUE;
-            return (int) Math.round(100.0 / taxPercent);
+            int every = (int) Math.round(100.0 / taxPercent);
+            return Math.max(1, every);
         }
 
-        /** Проверяет, находится ли точка в зоне. */
-        public boolean isInZone(org.bukkit.Location loc) {
+        public boolean isInZone(Location loc) {
+            if (loc == null || loc.getWorld() == null) return false;
             if (!loc.getWorld().getName().equals(worldName)) return false;
-            return loc.getX() >= zoneMinX && loc.getX() <= zoneMaxX &&
-                   loc.getY() >= zoneMinY && loc.getY() <= zoneMaxY &&
-                   loc.getZ() >= zoneMinZ && loc.getZ() <= zoneMaxZ;
+
+            double x = loc.getX(), y = loc.getY(), z = loc.getZ();
+            return x >= Math.min(zoneMinX, zoneMaxX) && x <= Math.max(zoneMinX, zoneMaxX)
+                    && y >= Math.min(zoneMinY, zoneMaxY) && y <= Math.max(zoneMinY, zoneMaxY)
+                    && z >= Math.min(zoneMinZ, zoneMaxZ) && z <= Math.max(zoneMinZ, zoneMaxZ);
         }
     }
 
@@ -427,12 +512,15 @@ public class ConfigManager {
         public String id;
         public boolean enabled;
         public int x, y, z;
-        public String worldName; // ← НОВОЕ
+        public String worldName;
     }
 
     public static class ShopItemConfig {
-        public String id, name, description;
+        public String id;
+        public String name;
         public Material material;
         public int price;
+        public int amount;
+        public String description;
     }
 }
