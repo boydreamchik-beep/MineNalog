@@ -189,6 +189,15 @@ public class MinePlugin extends JavaPlugin {
             npcListener.despawnNPC();
             npcListener.spawnNPC();
         }
+        if (propertyManager != null) {
+            propertyManager.stopTasks();
+            propertyManager.startLandTaxReminder();
+            propertyManager.startInstallmentChecker();
+        }
+        if (creditManager != null) {
+            creditManager.stopReminders();
+            creditManager.startReminders();
+        }
         getLogger().info("Конфиг перезагружен!");
     }
 

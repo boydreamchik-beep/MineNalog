@@ -137,15 +137,17 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                 }
             }
             case NOT_ENOUGH -> {
-                player.sendMessage(Component.text("[Рассрочка] Не хватает булыжника!")
+                Material currency = plugin.getConfigManager().getShopCurrency();
+                player.sendMessage(Component.text("[Рассрочка] Не хватает "
+                                + plugin.getConfigManager().getShopCurrencyName() + "!")
                         .color(NamedTextColor.RED));
                 int cobbleInv = 0;
                 for (ItemStack item : player.getInventory().getContents()) {
-                    if (item != null && item.getType() == Material.COBBLESTONE) {
+                    if (item != null && item.getType() == currency) {
                         cobbleInv += item.getAmount();
                     }
                 }
-                int cobbleContainers = ChestScanner.countInNearbyContainers(player, Material.COBBLESTONE);
+                int cobbleContainers = ChestScanner.countInNearbyContainers(player, currency);
                 player.sendMessage(Component.text("[Рассрочка] У вас: " + (cobbleInv + cobbleContainers)
                                 + " (инвентарь: " + cobbleInv + ", сундуки: " + cobbleContainers + ")")
                         .color(NamedTextColor.GRAY));
@@ -241,15 +243,17 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
         boolean success = pm.payLandTax(player);
 
         if (success) {
+            int amount = plugin.getConfigManager().getLandTaxAmount();
             player.sendMessage(Component.empty());
             player.sendMessage(Component.text("╔══════════════════════════════╗")
                     .color(NamedTextColor.GREEN));
             player.sendMessage(Component.text("║  ЗЕМЕЛЬНЫЙ НАЛОГ ОПЛАЧЕН!")
                     .color(NamedTextColor.GREEN)
                     .decoration(TextDecoration.BOLD, true));
-            player.sendMessage(Component.text("║  Списано: " + PropertyManager.LAND_TAX_AMOUNT + " булыж.")
+            player.sendMessage(Component.text("║  Списано: " + amount + " булыж.")
                     .color(NamedTextColor.YELLOW));
-            player.sendMessage(Component.text("║  (2 стака)")
+            player.sendMessage(Component.text("║  (" + (amount / 64) + " стак. + "
+                            + (amount % 64) + " шт.)")
                     .color(NamedTextColor.GRAY));
             player.sendMessage(Component.text("╚══════════════════════════════╝")
                     .color(NamedTextColor.GREEN));
@@ -260,7 +264,7 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                         .color(NamedTextColor.RED));
             } else {
                 player.sendMessage(Component.text("[Налог] Не хватает булыжника! Нужно: "
-                                + PropertyManager.LAND_TAX_AMOUNT)
+                                + plugin.getConfigManager().getLandTaxAmount())
                         .color(NamedTextColor.RED));
             }
         }
@@ -282,10 +286,11 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
 
         UUID uuid = player.getUniqueId();
 
-        // Баланс — ТОЛЬКО булыжник в инвентаре
+        // Баланс — ТОЛЬКО валюта в инвентаре
+        Material currency = plugin.getConfigManager().getShopCurrency();
         int cobbleInInventory = 0;
         for (ItemStack item : player.getInventory().getContents()) {
-            if (item != null && item.getType() == Material.COBBLESTONE) {
+            if (item != null && item.getType() == currency) {
                 cobbleInInventory += item.getAmount();
             }
         }
@@ -297,7 +302,8 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                 .decoration(TextDecoration.BOLD, true).decoration(TextDecoration.ITALIC, false));
         im.lore(List.of(
                 Component.empty(),
-                Component.text("Булыжник в инвентаре: " + cobbleInInventory)
+                Component.text(plugin.getConfigManager().getShopCurrencyName()
+                                + " в инвентаре: " + cobbleInInventory)
                         .color(NamedTextColor.WHITE).decoration(TextDecoration.ITALIC, false)
         ));
         info.setItemMeta(im);
@@ -349,7 +355,10 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
             lore.add(Component.text(coords).color(NamedTextColor.DARK_GRAY)
                     .decoration(TextDecoration.ITALIC, false));
             lore.add(Component.empty());
-            lore.add(Component.text("Земельный налог: 2 стака / 3 дня")
+            lore.add(Component.text("Земельный налог: "
+                            + plugin.getConfigManager().getLandTaxAmount() + " / "
+                            + plugin.getConfigManager().getLandTaxIntervalGameDays()
+                            + " игр. дня")
                     .color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
             lore.add(Component.text("/property tax — оплатить")
                     .color(NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false));
@@ -394,7 +403,7 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
             int totalPrice = price * blocks;
 
             // Считаем всё (инвентарь + сундуки) для покупки
-            int totalCobble = ChestScanner.countTotalMaterial(player, Material.COBBLESTONE);
+            int totalCobble = ChestScanner.countTotalMaterial(player, currency);
 
             plotMeta.displayName(Component.text("Участок №1").color(NamedTextColor.YELLOW)
                     .decoration(TextDecoration.BOLD, true).decoration(TextDecoration.ITALIC, false));
@@ -408,9 +417,13 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
             lore.add(Component.empty());
             lore.add(Component.text("Размер: " + blocks + " блок (3 вниз + 20 вверх)")
                     .color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
-            lore.add(Component.text("Цена: " + totalPrice + " булыжников")
+            lore.add(Component.text("Цена: " + totalPrice + " "
+                            + plugin.getConfigManager().getShopCurrencyName())
                     .color(NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false));
-            lore.add(Component.text("Земельный налог: 2 стака / 3 игр. дня")
+            lore.add(Component.text("Земельный налог: "
+                            + plugin.getConfigManager().getLandTaxAmount() + " / "
+                            + plugin.getConfigManager().getLandTaxIntervalGameDays()
+                            + " игр. дня")
                     .color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
             lore.add(Component.empty());
             if (totalCobble >= totalPrice) {
@@ -512,7 +525,10 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                             .color(NamedTextColor.GRAY));
                     player.sendMessage(Component.text("║  Списано: " + totalPrice + " булыж.")
                             .color(NamedTextColor.YELLOW));
-                    player.sendMessage(Component.text("║  Земельный налог: 2 стака / 3 дня")
+                    player.sendMessage(Component.text("║  Земельный налог: "
+                                    + plugin.getConfigManager().getLandTaxAmount() + " / "
+                                    + plugin.getConfigManager().getLandTaxIntervalGameDays()
+                                    + " игр. дня")
                             .color(NamedTextColor.RED));
                     player.sendMessage(Component.text("║  /property tax — оплатить")
                             .color(NamedTextColor.AQUA));
