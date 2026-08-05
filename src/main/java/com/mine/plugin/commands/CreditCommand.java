@@ -4,6 +4,7 @@ import com.mine.plugin.MinePlugin;
 import com.mine.plugin.managers.ConfigManager;
 import com.mine.plugin.managers.CreditManager;
 import com.mine.plugin.managers.CreditManager.CreditData;
+import com.mine.plugin.utils.TaxUtils;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -103,6 +104,7 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
                 CreditData data = cm.getCreditData(uuid);
                 int totalDebt = data != null ? data.amount : amount;
 
+                TaxUtils.playSuccessSound(player);
                 player.sendMessage(Component.empty());
                 player.sendMessage(Component.text("╔══════════════════════════════╗")
                         .color(NamedTextColor.GREEN));
@@ -126,6 +128,7 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
                 player.sendMessage(Component.empty());
             }
             case EXCEEDS_LIMIT -> {
+                TaxUtils.playErrorSound(player);
                 CreditData data = cm.getCreditData(uuid);
                 int currentDebt = data != null ? data.amount : 0;
                 int canTake = maxAmount - currentDebt;

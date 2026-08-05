@@ -210,6 +210,10 @@ public class PassportCommand implements CommandExecutor, TabCompleter {
                 .color(NamedTextColor.DARK_RED)
                 .append(Component.text((income.taxPaidTotal + income.autoTaxPaid) + " булыж.")
                         .color(NamedTextColor.YELLOW)));
+        player.sendMessage(Component.text("│  Посещений шахты: ")
+                .color(NamedTextColor.DARK_RED)
+                .append(Component.text(String.valueOf(plugin.getIncomeTracker().getMineVisits(player.getUniqueId())))
+                        .color(NamedTextColor.AQUA)));
         player.sendMessage(Component.text("└──────────────────────────────────────┘")
                 .color(NamedTextColor.DARK_RED));
         player.sendMessage(Component.empty());

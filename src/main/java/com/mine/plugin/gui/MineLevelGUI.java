@@ -4,6 +4,7 @@ import com.mine.plugin.MinePlugin;
 import com.mine.plugin.listeners.CompassListener;
 import com.mine.plugin.managers.ConfigManager;
 import com.mine.plugin.managers.ConfigManager.LevelConfig;
+import com.mine.plugin.utils.TaxUtils;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -205,7 +206,9 @@ public class MineLevelGUI implements Listener {
                     playerLevels.put(uuid, level);
                     plugin.getTaxTracker().reset(uuid);
                     CompassListener.giveCompass(player);
+                    plugin.getIncomeTracker().recordMineVisit(uuid);
 
+                    TaxUtils.playTeleportSound(player);
                     player.sendMessage(Component.empty());
                     player.sendMessage(Component.text("==============================")
                             .color(NamedTextColor.DARK_GREEN));

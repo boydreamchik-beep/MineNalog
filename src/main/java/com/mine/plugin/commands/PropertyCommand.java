@@ -3,6 +3,7 @@ package com.mine.plugin.commands;
 import com.mine.plugin.MinePlugin;
 import com.mine.plugin.gui.MineInventoryHolder;
 import com.mine.plugin.managers.*;
+import com.mine.plugin.utils.TaxUtils;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -494,6 +495,7 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                 if (success) {
                     player.closeInventory();
                     String coords = pm.getPlotCoordinates(plotId);
+                    TaxUtils.playSuccessSound(player);
                     player.sendMessage(Component.empty());
                     player.sendMessage(Component.text("╔══════════════════════════════════╗")
                             .color(NamedTextColor.GREEN));

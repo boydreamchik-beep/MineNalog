@@ -52,10 +52,13 @@ public class IncomeTracker {
                         int minedTotal = section.getInt(uuidStr + ".mined_total", 0);
                         int taxPaidTotal = section.getInt(uuidStr + ".tax_paid_total", 0);
                         int autoTaxPaid = section.getInt(uuidStr + ".auto_tax_paid", 0);
+                        int mineVisits = section.getInt(uuidStr + ".mine_visits", 0);
                         
                         // Не загружаем нулевые записи
-                        if (minedTotal > 0 || taxPaidTotal > 0 || autoTaxPaid > 0) {
-                            incomes.put(uuid, new IncomeData(minedTotal, taxPaidTotal, autoTaxPaid));
+                        if (minedTotal > 0 || taxPaidTotal > 0 || autoTaxPaid > 0 || mineVisits > 0) {
+                            IncomeData data = new IncomeData(minedTotal, taxPaidTotal, autoTaxPaid);
+                            data.mineVisits = mineVisits;
+                            incomes.put(uuid, data);
                         }
                     } catch (Exception e) {
                         plugin.getLogger().warning("Ошибка загрузки incomes." + uuidStr + ": " + e.getMessage());
@@ -102,7 +105,11 @@ public class IncomeTracker {
 
         // Копируем данные для безопасной записи в другом потоке
         final Map<UUID, IncomeData> snapshot = new HashMap<>();
-        incomes.forEach((k, v) -> snapshot.put(k, new IncomeData(v.minedTotal, v.taxPaidTotal, v.autoTaxPaid)));
+        incomes.forEach((k, v) -> {
+            IncomeData copy = new IncomeData(v.minedTotal, v.taxPaidTotal, v.autoTaxPaid);
+            copy.mineVisits = v.mineVisits;
+            snapshot.put(k, copy);
+        });
         
         dirty = false;
 
@@ -125,6 +132,7 @@ public class IncomeTracker {
             cfg.set(path + ".mined_total", d.minedTotal);
             cfg.set(path + ".tax_paid_total", d.taxPaidTotal);
             cfg.set(path + ".auto_tax_paid", d.autoTaxPaid);
+            cfg.set(path + ".mine_visits", d.mineVisits);
         }
         
         try {
@@ -162,6 +170,22 @@ public class IncomeTracker {
     }
 
     /**
+     * Записать посещение шахты
+     */
+    public void recordMineVisit(UUID uuid) {
+        incomes.computeIfAbsent(uuid, k -> new IncomeData(0, 0, 0)).mineVisits++;
+        dirty = true;
+    }
+
+    /**
+     * Получить количество посещений шахты
+     */
+    public int getMineVisits(UUID uuid) {
+        IncomeData data = getIncome(uuid);
+        return data.mineVisits;
+    }
+
+    /**
      * Получить данные о доходе игрока
      * @return IncomeData или новый объект с нулями если данных нет
      */
@@ -190,11 +214,13 @@ public class IncomeTracker {
         public int minedTotal;
         public int taxPaidTotal;
         public int autoTaxPaid;
+        public int mineVisits;
 
         public IncomeData(int minedTotal, int taxPaidTotal, int autoTaxPaid) {
             this.minedTotal = minedTotal;
             this.taxPaidTotal = taxPaidTotal;
             this.autoTaxPaid = autoTaxPaid;
+            this.mineVisits = 0;
         }
     }
 }

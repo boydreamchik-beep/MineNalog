@@ -3,6 +3,7 @@ package com.mine.plugin.listeners;
 import com.mine.plugin.MinePlugin;
 import com.mine.plugin.gui.MineLevelGUI;
 import com.mine.plugin.managers.ConfigManager;
+import com.mine.plugin.utils.TaxUtils;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -110,6 +111,7 @@ public class CompassListener implements Listener {
         exitLoc.setPitch(player.getLocation().getPitch());
         player.teleport(exitLoc);
 
+        TaxUtils.playTeleportSound(player);
         player.sendMessage(Component.text(" Вы вышли из шахты!")
                 .color(NamedTextColor.GREEN)
                 .decoration(TextDecoration.BOLD, true));

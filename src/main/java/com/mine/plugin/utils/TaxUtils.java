@@ -1,13 +1,17 @@
 package com.mine.plugin.utils;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.Map;
 
 /**
- * Утилиты для налоговой системы.
+ * Утилиты для налоговой системы и общих.helper функций.
  * Все методы статические, класс не создаётся.
  */
 public final class TaxUtils {
@@ -120,5 +124,59 @@ public final class TaxUtils {
             return base; // уже в нужном падеже для большинства
         }
         return base;
+    }
+
+    // =====================================================
+    // ЗВУКОВЫЕ ЭФФЕКТЫ
+    // =====================================================
+
+    /**
+     * Звук успеха (покупка, продажа, получение)
+     */
+    public static void playSuccessSound(Player player) {
+        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
+    }
+
+    /**
+     * Звук ошибки (не хватает денег, отказ)
+     */
+    public static void playErrorSound(Player player) {
+        player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+    }
+
+    /**
+     * Звук уведомления (налог, напоминание)
+     */
+    public static void playNotificationSound(Player player) {
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 1.0f, 1.2f);
+    }
+
+    /**
+     * Звук телепортации
+     */
+    public static void playTeleportSound(Player player) {
+        player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+    }
+
+    // =====================================================
+    // ФОРМАТИРОВАНИЕ СООБЩЕНИЙ
+    // =====================================================
+
+    /**
+     * Создать красивое сообщение с заголовком
+     */
+    public static Component createTitleMessage(String title, NamedTextColor color) {
+        return Component.text("╔══════════════════════════════╗").color(color)
+                .appendNewline()
+                .append(Component.text("║  " + title).color(color).decoration(TextDecoration.BOLD, true))
+                .appendNewline()
+                .append(Component.text("╚══════════════════════════════╝").color(color));
+    }
+
+    /**
+     * Создать разделитель
+     */
+    public static Component createSeparator(NamedTextColor color) {
+        return Component.text("══════════════════════════════").color(color);
     }
 }

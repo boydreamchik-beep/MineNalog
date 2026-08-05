@@ -4,6 +4,7 @@ import com.mine.plugin.MinePlugin;
 import com.mine.plugin.gui.MineInventoryHolder;
 import com.mine.plugin.managers.ConfigManager;
 import com.mine.plugin.managers.ConfigManager.ShopItemConfig;
+import com.mine.plugin.utils.TaxUtils;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -143,6 +144,7 @@ public class ShopCommand implements CommandExecutor, TabCompleter, Listener {
         int playerCurrency = countMaterial(player, currency);
 
         if (playerCurrency < shopItem.price) {
+            TaxUtils.playErrorSound(player);
             player.sendMessage(Component.text("[Магазин] Не хватает " + cfg.getShopCurrencyName() + "!")
                     .color(NamedTextColor.RED));
             return;
@@ -157,6 +159,7 @@ public class ShopCommand implements CommandExecutor, TabCompleter, Listener {
             player.getWorld().dropItemNaturally(player.getLocation(), item);
         }
 
+        TaxUtils.playSuccessSound(player);
         player.sendMessage(Component.text("[Магазин] Куплено: " + shopItem.name
                         + " x" + buyAmount + " за " + shopItem.price + " " + cfg.getShopCurrencyName())
                 .color(NamedTextColor.GREEN));
