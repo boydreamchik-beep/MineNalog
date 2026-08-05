@@ -2,19 +2,25 @@ package com.mine.plugin.managers;
 
 import com.mine.plugin.MinePlugin;
 import org.bukkit.Material;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Управляет казной города. Async-safe.
+ */
 public class KaznaManager {
 
     private final MinePlugin plugin;
     private final File kaznaFile;
-    private FileConfiguration kaznaConfig;
-    private final Map<Material, Integer> kaznaItems = new HashMap<>();
+    private final Map<Material, Integer> kaznaItems = new ConcurrentHashMap<>();
+    private volatile boolean dirty = false;
+    private BukkitTask autoSaveTask;
+
+    public static final int ITEMS_PER_PAGE = 36; // 9..44
 
     public KaznaManager(MinePlugin plugin) {
         this.plugin = plugin;
@@ -22,18 +28,19 @@ public class KaznaManager {
     }
 
     public void load() {
+        kaznaFile.getParentFile().mkdirs();
         if (!kaznaFile.exists()) {
-            try { kaznaFile.createNewFile(); } catch (IOException e) { e.printStackTrace(); }
+            try { kaznaFile.createNewFile(); } catch (IOException ignored) {}
         }
-        kaznaConfig = YamlConfiguration.loadConfiguration(kaznaFile);
+        var cfg = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(kaznaFile);
         kaznaItems.clear();
-        if (kaznaConfig.contains("items")) {
-            var section = kaznaConfig.getConfigurationSection("items");
+        if (cfg.contains("items")) {
+            var section = cfg.getConfigurationSection("items");
             if (section != null) {
                 for (String key : section.getKeys(false)) {
                     try {
                         Material mat = Material.valueOf(key);
-                        int amount = section.getInt(key);
+                        int amount = section.getInt(key, 0);
                         if (amount > 0) kaznaItems.put(mat, amount);
                     } catch (IllegalArgumentException ignored) {}
                 }
@@ -41,18 +48,10 @@ public class KaznaManager {
         }
     }
 
-    public void save() {
-        kaznaConfig = new YamlConfiguration();
-        for (var entry : kaznaItems.entrySet()) {
-            kaznaConfig.set("items." + entry.getKey().name(), entry.getValue());
-        }
-        try { kaznaConfig.save(kaznaFile); } catch (IOException e) { e.printStackTrace(); }
-    }
-
     public void addItem(Material material, int amount) {
-        if (amount <= 0) return;
+        if (amount <= 0 || material == null || material.isAir()) return;
         kaznaItems.merge(material, amount, Integer::sum);
-        save();
+        dirty = true;
     }
 
     public int getAmount(Material m) {
@@ -63,50 +62,69 @@ public class KaznaManager {
         return new HashMap<>(kaznaItems);
     }
 
-    public int getTotalItemCount() {
-        return kaznaItems.values().stream().mapToInt(Integer::intValue).sum();
+    public long getTotalItemCount() {
+        return kaznaItems.values().stream().mapToLong(Integer::longValue).sum();
     }
 
-    /**
-     * Количество страниц (по стакам — каждый предмет раскладывается в ячейки по 64)
-     */
     public int getMaxPages() {
-        int perPage = plugin.getConfigManager().getKaznaItemsPerPage();
-        int maxPages = plugin.getConfigManager().getKaznaMaxPages();
+        ConfigManager cfg = plugin.getConfigManager();
+        int perPage = ITEMS_PER_PAGE; // игнорируем conf, чтобы всегда совпадало с GUI
+        int maxPages = cfg.getKaznaMaxPages();
 
-        int totalStacks = 0;
-        for (int amount : kaznaItems.values()) {
-            totalStacks += (int) Math.ceil((double) amount / 64);
+        long totalStacks = 0;
+        for (var entry : kaznaItems.entrySet()) {
+            totalStacks += (long) Math.ceil((double) entry.getValue() / entry.getKey().getMaxStackSize());
         }
-
         if (totalStacks == 0) return 1;
         return Math.min((int) Math.ceil((double) totalStacks / perPage), maxPages);
     }
 
-    /**
-     * Получить предметы для страницы, разбитые на стаки по 64.
-     * Каждый элемент списка = одна ячейка в GUI.
-     */
     public List<Map.Entry<Material, Integer>> getItemsForPage(int page) {
-        int perPage = plugin.getConfigManager().getKaznaItemsPerPage();
-
+        int perPage = ITEMS_PER_PAGE;
         List<Map.Entry<Material, Integer>> allStacks = new ArrayList<>();
 
-        // Разбиваем все предметы на стаки по 64
-        for (var entry : kaznaItems.entrySet()) {
-            int amount = entry.getValue();
-            while (amount > 0) {
-                int stackSize = Math.min(amount, 64);
-                allStacks.add(Map.entry(entry.getKey(), stackSize));
-                amount -= stackSize;
-            }
-        }
+        // Сортируем для стабильности страниц (алфавит по названию материала)
+        kaznaItems.entrySet().stream()
+                .filter(e -> e.getValue() > 0)
+                .sorted(Comparator.comparing(e -> e.getKey().name()))
+                .forEach(entry -> {
+                    int amount = entry.getValue();
+                    int maxStack = entry.getKey().getMaxStackSize();
+                    while (amount > 0) {
+                        int stackSize = Math.min(amount, maxStack);
+                        allStacks.add(Map.entry(entry.getKey(), stackSize));
+                        amount -= stackSize;
+                    }
+                });
 
-        // Вырезаем нужную страницу
         int start = page * perPage;
+        if (start >= allStacks.size()) return Collections.emptyList();
         int end = Math.min(start + perPage, allStacks.size());
-
-        if (start >= allStacks.size()) return new ArrayList<>();
         return new ArrayList<>(allStacks.subList(start, end));
+    }
+
+    /** Запустить фоновое сохранение каждые 2 минуты. */
+    public void startAutoSave() {
+        autoSaveTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (dirty) saveSync();
+        }, 2400L, 2400L);
+    }
+
+    public void stopAutoSave() {
+        if (autoSaveTask != null) autoSaveTask.cancel();
+    }
+
+    /** Синхронное сохранение — только для onDisable! */
+    public void saveSync() {
+        Map<Material, Integer> snapshot = new HashMap<>(kaznaItems);
+        dirty = false;
+
+        var cfg = new org.bukkit.configuration.file.YamlConfiguration();
+        for (var entry : snapshot.entrySet()) {
+            cfg.set("items." + entry.getKey().name(), entry.getValue());
+        }
+        try { cfg.save(kaznaFile); } catch (IOException e) {
+            plugin.getLogger().severe("Не удалось сохранить kazna.yml: " + e.getMessage());
+        }
     }
 }
