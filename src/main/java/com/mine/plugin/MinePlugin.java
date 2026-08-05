@@ -81,6 +81,12 @@ public class MinePlugin extends JavaPlugin {
         propertyManager.startLandTaxReminder();
         propertyManager.startInstallmentChecker();
 
+        // Автосохранение менеджеров
+        kaznaManager.startAutoSave();
+        passportManager.startAutoSave();
+        incomeTracker.startAutoSave();
+        propertyManager.startAutoSave();
+
         KaznaCommand kaznaCommand = new KaznaCommand(this);
         getCommand("kazna").setExecutor(kaznaCommand);
         getCommand("kazna").setTabCompleter(kaznaCommand);
@@ -111,23 +117,31 @@ public class MinePlugin extends JavaPlugin {
         getCommand("minereload").setExecutor(new ReloadCommand(this));
 
         getLogger().info("=================================");
-        getLogger().info("MinePlugin v5.2.0 загружен!");
+        getLogger().info("MinePlugin v6.0.0 загружен!");
         getLogger().info("=================================");
     }
 
     @Override
     public void onDisable() {
-        if (kaznaManager != null) kaznaManager.save();
+        if (kaznaManager != null) kaznaManager.saveSync();
         if (creditManager != null) {
-            creditManager.save();
+            creditManager.saveSync();
             creditManager.stopReminders();
         }
-        if (passportManager != null) passportManager.save();
-        if (incomeTracker != null) incomeTracker.save();
-        if (propertyManager != null) {
-            propertyManager.save();
-            propertyManager.stopLandTaxReminder();
+        if (passportManager != null) {
+            passportManager.saveSync();
+            passportManager.stopAutoSave();
         }
+        if (incomeTracker != null) {
+            incomeTracker.saveSync();
+            incomeTracker.stopAutoSave();
+        }
+        if (propertyManager != null) {
+            propertyManager.saveSync();
+            propertyManager.stopTasks();
+            propertyManager.stopAutoSave();
+        }
+        if (kaznaManager != null) kaznaManager.stopAutoSave();
         if (scoreboardManager != null) scoreboardManager.stop();
         if (taxCollector != null) taxCollector.stop();
         if (npcListener != null) npcListener.despawnNPC();
@@ -140,7 +154,14 @@ public class MinePlugin extends JavaPlugin {
             scoreboardManager.stop();
             scoreboardManager.start();
         }
-        if (mineGenerator != null) mineGenerator.start();
+        if (taxCollector != null) {
+            taxCollector.stop();
+            taxCollector.start();
+        }
+        if (mineGenerator != null) {
+            mineGenerator.stop();
+            mineGenerator.start();
+        }
         if (npcListener != null) {
             npcListener.despawnNPC();
             npcListener.spawnNPC();

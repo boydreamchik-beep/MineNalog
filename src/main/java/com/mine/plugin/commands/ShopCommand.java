@@ -150,14 +150,15 @@ public class ShopCommand implements CommandExecutor, TabCompleter, Listener {
 
         removeMaterial(player, currency, shopItem.price);
 
+        int buyAmount = Math.max(1, shopItem.amount);
         Map<Integer, ItemStack> overflow = player.getInventory()
-                .addItem(new ItemStack(shopItem.material, 1));
+                .addItem(new ItemStack(shopItem.material, buyAmount));
         for (ItemStack item : overflow.values()) {
             player.getWorld().dropItemNaturally(player.getLocation(), item);
         }
 
         player.sendMessage(Component.text("[Магазин] Куплено: " + shopItem.name
-                        + " за " + shopItem.price + " " + cfg.getShopCurrencyName())
+                        + " x" + buyAmount + " за " + shopItem.price + " " + cfg.getShopCurrencyName())
                 .color(NamedTextColor.GREEN));
 
         player.closeInventory();

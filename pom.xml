@@ -7,11 +7,11 @@
 
     <groupId>com.mine.plugin</groupId>
     <artifactId>MinePlugin</artifactId>
-    <version>4.0.0</version>
+    <version>6.0.0</version>
     <packaging>jar</packaging>
 
     <name>MinePlugin</name>
-    <description>Шахта, казна, магазин, кредиты, паспорт</description>
+    <description>Полная система государства — шахта, казна, магазин, кредиты, паспорт, имущество</description>
 
     <properties>
         <java.version>21</java.version>
@@ -31,7 +31,7 @@
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
-            <version>1.21.1-R0.1-SNAPSHOT</version>
+            <version>1.21.11-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>

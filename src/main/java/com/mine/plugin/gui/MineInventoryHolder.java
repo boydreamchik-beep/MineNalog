@@ -42,5 +42,8 @@ public class MineInventoryHolder implements InventoryHolder {
     public String getExtraData() { return extraData; }
 
     @Override
-    public @NotNull Inventory getInventory() { return null; }
+    public @NotNull Inventory getInventory() {
+        throw new UnsupportedOperationException(
+                "MineInventoryHolder is a marker holder, do not call getInventory() on it directly.");
+    }
 }

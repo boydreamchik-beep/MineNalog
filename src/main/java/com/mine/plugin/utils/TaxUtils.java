@@ -1,6 +1,10 @@
 package com.mine.plugin.utils;
 
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+
+import java.util.Map;
 
 /**
  * Утилиты для налоговой системы.
@@ -9,6 +13,51 @@ import org.bukkit.Material;
 public final class TaxUtils {
 
     private TaxUtils() {}
+
+    /**
+     * Подсчитать количество материала в инвентаре игрока.
+     */
+    public static int countInInventory(Player player, Material material) {
+        int count = 0;
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && item.getType() == material) {
+                count += item.getAmount();
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Удалить material из инвентаря игрока.
+     * @return остаток, который не удалось удалить (0 если всё удалено)
+     */
+    public static int removeFromInventory(Player player, Material material, int amount) {
+        int remaining = amount;
+        for (int i = 0; i < player.getInventory().getSize(); i++) {
+            ItemStack item = player.getInventory().getItem(i);
+            if (item == null || item.getType() != material) continue;
+
+            if (item.getAmount() <= remaining) {
+                remaining -= item.getAmount();
+                player.getInventory().setItem(i, null);
+            } else {
+                item.setAmount(item.getAmount() - remaining);
+                remaining = 0;
+            }
+            if (remaining <= 0) break;
+        }
+        return remaining;
+    }
+
+    /**
+     * Выдать предмет игроку; если инвентарь переполнен — выбросить на землю.
+     */
+    public static void giveItemOrDrop(Player player, ItemStack item) {
+        Map<Integer, ItemStack> overflow = player.getInventory().addItem(item);
+        for (ItemStack leftover : overflow.values()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+        }
+    }
 
     /**
      * Получить русское название материала для отображения игроку

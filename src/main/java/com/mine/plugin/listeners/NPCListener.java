@@ -27,7 +27,7 @@ import java.util.UUID;
 
 /**
  * Настоящий NPC (Villager) на координатах property.npc.
- * 
+ *
  * - Спавнится при старте плагина
  * - Неуязвим (нельзя убить)
  * - Не двигается (AI выключен)
@@ -40,6 +40,7 @@ public class NPCListener implements Listener {
     private final PropertyCommand propertyCommand;
     private final NamespacedKey npcKey;
     private final Map<UUID, Long> cooldowns = new HashMap<>();
+    private boolean spawning = false;
 
     // Ссылка на живого NPC
     private Villager propertyNPC;
@@ -51,15 +52,34 @@ public class NPCListener implements Listener {
     }
 
     /**
+     * Получить мир для NPC из конфига
+     */
+    private World getNpcWorld() {
+        String worldName = plugin.getConfigManager().getNpcWorldName();
+        World world = Bukkit.getWorld(worldName);
+        if (world == null && !Bukkit.getWorlds().isEmpty()) {
+            world = Bukkit.getWorlds().get(0);
+        }
+        return world;
+    }
+
+    /**
      * Заспавнить NPC (вызывается после загрузки плагина)
      */
     public void spawnNPC() {
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            double x = plugin.getConfig().getDouble("property.npc.x", -204.304);
-            double y = plugin.getConfig().getDouble("property.npc.y", 66.0);
-            double z = plugin.getConfig().getDouble("property.npc.z", -24.418);
+        // Защита от множественного спавна
+        if (spawning) return;
+        if (propertyNPC != null && !propertyNPC.isDead()) return;
 
-            World world = Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0);
+        spawning = true;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            spawning = false;
+
+            double x = plugin.getConfigManager().getNpcX();
+            double y = plugin.getConfigManager().getNpcY();
+            double z = plugin.getConfigManager().getNpcZ();
+
+            World world = getNpcWorld();
             if (world == null) {
                 plugin.getLogger().warning("Не удалось спавнить NPC — мир не найден!");
                 return;
@@ -175,12 +195,15 @@ public class NPCListener implements Listener {
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent event) {
         // Проверяем что это чанк с NPC
-        double npcX = plugin.getConfig().getDouble("property.npc.x", -204.304);
-        double npcZ = plugin.getConfig().getDouble("property.npc.z", -24.418);
+        double npcX = plugin.getConfigManager().getNpcX();
+        double npcZ = plugin.getConfigManager().getNpcZ();
         int chunkX = (int) Math.floor(npcX / 16);
         int chunkZ = (int) Math.floor(npcZ / 16);
 
         if (event.getChunk().getX() == chunkX && event.getChunk().getZ() == chunkZ) {
+            // Если NPC уже жив — просто обновляем ссылку
+            if (propertyNPC != null && !propertyNPC.isDead()) return;
+
             // Проверяем, есть ли NPC в мире
             boolean found = false;
             for (Entity entity : event.getChunk().getEntities()) {
@@ -190,7 +213,7 @@ public class NPCListener implements Listener {
                     break;
                 }
             }
-            if (!found) {
+            if (!found && !spawning) {
                 // Нет NPC — спавним
                 spawnNPC();
             }

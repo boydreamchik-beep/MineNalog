@@ -8,7 +8,7 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Container;
-import org.bukkit.block.DoubleChest;
+import org.bukkit.inventory.DoubleChest;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -25,7 +25,9 @@ import java.util.function.BiConsumer;
  */
 public class ChestScanner {
 
-    private static final Set<Location> VISITED_DOUBLE_CHESTS = new HashSet<>();
+    // ThreadLocal для потокобезопасности — каждый вызов имеет свой Set
+    private static final ThreadLocal<Set<Location>> VISITED_DOUBLE_CHESTS =
+            ThreadLocal.withInitial(HashSet::new);
 
     private ChestScanner() {}
 
@@ -139,30 +141,35 @@ public class ChestScanner {
         int pcz = loc.getBlockZ() >> 4;
         int chunkRadius = (scanRadius + 15) >> 4;
         
-        VISITED_DOUBLE_CHESTS.clear();
+        Set<Location> visited = VISITED_DOUBLE_CHESTS.get();
+        visited.clear();
 
-        for (int cx = pcx - chunkRadius; cx <= pcx + chunkRadius; cx++) {
-            for (int cz = pcz - chunkRadius; cz <= pcz + chunkRadius; cz++) {
-                // НЕ загружаем чанки насильно!
-                if (!world.isChunkLoaded(cx, cz)) continue;
-                
-                for (BlockState state : world.getChunkAt(cx, cz).getTileEntities()) {
-                    if (!(state instanceof Container container)) continue;
-                    
-                    Block block = state.getBlock();
-                    if (block.getLocation().distanceSquared(loc) > radiusSq) continue;
+        try {
+            for (int cx = pcx - chunkRadius; cx <= pcx + chunkRadius; cx++) {
+                for (int cz = pcz - chunkRadius; cz <= pcz + chunkRadius; cz++) {
+                    // НЕ загружаем чанки насильно!
+                    if (!world.isChunkLoaded(cx, cz)) continue;
 
-                    Inventory inv = container.getInventory();
-                    
-                    // Дедупликация двойных сундуков
-                    if (inv.getHolder() instanceof DoubleChest dc) {
-                        Location key = dc.getLocation();
-                        if (!VISITED_DOUBLE_CHESTS.add(key)) continue;
+                    for (BlockState state : world.getChunkAt(cx, cz).getTileEntities()) {
+                        if (!(state instanceof Container container)) continue;
+
+                        Block block = state.getBlock();
+                        if (block.getLocation().distanceSquared(loc) > radiusSq) continue;
+
+                        Inventory inv = container.getInventory();
+
+                        // Дедупликация двойных сундуков
+                        if (inv.getHolder() instanceof DoubleChest dc) {
+                            Location key = dc.getLocation();
+                            if (!visited.add(key)) continue;
+                        }
+
+                        action.accept(state, inv);
                     }
-                    
-                    action.accept(state, inv);
                 }
             }
+        } finally {
+            visited.clear();
         }
     }
 

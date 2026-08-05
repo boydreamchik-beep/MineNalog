@@ -10,8 +10,8 @@ import org.bukkit.scheduler.BukkitTask;
 
 /**
  * Автоматический налог.
- * Каждые 3 игровых дня (1 игровой день = 20 мин)
- * забирает 20% булыжника из инвентаря и сундуков.
+ * Забирает процент булыжника из инвентаря и сундуков.
+ * Интервал в игровых днях (настраивается через ConfigManager).
  */
 public class TaxCollector {
 
@@ -23,12 +23,12 @@ public class TaxCollector {
     }
 
     public void start() {
-        boolean enabled = plugin.getConfig().getBoolean("auto-tax.enabled", true);
-        if (!enabled) return;
+        ConfigManager cfg = plugin.getConfigManager();
+        if (!cfg.isAutoTaxEnabled()) return;
 
-        int intervalDays = plugin.getConfig().getInt("auto-tax.interval-game-days", 3);
-        // 1 игровой день = 24000 тиков
-        long intervalTicks = (long) intervalDays * 24000L;
+        int intervalDays = cfg.getAutoTaxIntervalGameDays();
+        // Используем игровые дни в тиках из ConfigManager
+        long intervalTicks = (long) intervalDays * cfg.getGameDayTicks();
 
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::collectTaxes, intervalTicks, intervalTicks);
         plugin.getLogger().info("Автоналог запущен. Интервал: " + intervalDays + " игровых дней.");
@@ -39,14 +39,9 @@ public class TaxCollector {
     }
 
     private void collectTaxes() {
-        double rate = plugin.getConfig().getDouble("auto-tax.rate", 0.20);
-        String currencyStr = plugin.getConfig().getString("auto-tax.currency", "COBBLESTONE");
-        Material currency;
-        try {
-            currency = Material.valueOf(currencyStr);
-        } catch (Exception e) {
-            currency = Material.COBBLESTONE;
-        }
+        ConfigManager cfg = plugin.getConfigManager();
+        double rate = cfg.getAutoTaxRate();
+        Material currency = cfg.getAutoTaxCurrency();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             int totalCobble = ChestScanner.countTotalMaterial(player, currency);

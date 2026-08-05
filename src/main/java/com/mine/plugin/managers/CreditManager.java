@@ -1,6 +1,7 @@
 package com.mine.plugin.managers;
 
 import com.mine.plugin.MinePlugin;
+import com.mine.plugin.utils.TaxUtils;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;

@@ -73,7 +73,7 @@ public class MineBlockBreakListener implements Listener {
 
         // Определяем материалы
         boolean isTaxAsOriginal = cfg.isTaxAsOriginal(brokenBlock);
-        boolean isTaxBlock = taxTracker.incrementAndCheckTax(uuid);
+        boolean isTaxBlock = taxTracker.incrementAndCheckTax(uuid, level.getTaxEvery());
 
         Material taxMaterial = isTaxAsOriginal ? brokenBlock : Material.COBBLESTONE;
         Material playerMaterial = Material.COBBLESTONE;

@@ -332,18 +332,32 @@ public class ConfigManager {
         ConfigurationSection plot = config.getConfigurationSection("property.plots.plot-1");
         if (plot != null) {
             plot1Name = plot.getString("name", "Участок №1");
-            plot1MinX = plot.getDouble("min.x", -239.300);
-            plot1MinY = plot.getDouble("min.y", 64.0);
-            plot1MinZ = plot.getDouble("min.z", -63.525);
-            plot1MaxX = plot.getDouble("max.x", -229.458);
-            plot1MaxY = plot.getDouble("max.y", 87.0);
-            plot1MaxZ = plot.getDouble("max.z", -43.642);
-            plot1PricePerBlock = Math.max(1, plot.getInt("price-per-block", 32));
+
+            // config.yml хранит start-x/y/z + depth-down + height-up
+            double startX = plot.getDouble("start-x", -239);
+            double startY = plot.getDouble("start-y", 67);
+            double startZ = plot.getDouble("start-z", -64);
+            int depthDown = plot.getInt("depth-down", 3);
+            int heightUp = plot.getInt("height-up", 20);
+
+            // surface-blocks определяет количество блоков поверхности (площадь участка)
+            // Пока 1 блок = стартовая точка; для >1 можно расширить область по X/Z
             plot1SurfaceBlocks = Math.max(1, plot.getInt("surface-blocks", 1));
+            plot1PricePerBlock = Math.max(1, plot.getInt("price-per-block", 32));
+
+            // Вычисляем bounding box участка от start-точки
+            // 1 блок поверхности = 1×1 колонка, >1 — расширяем по X
+            int sideLen = (int) Math.ceil(Math.sqrt(plot1SurfaceBlocks));
+            plot1MinX = startX;
+            plot1MinY = startY - depthDown;
+            plot1MinZ = startZ;
+            plot1MaxX = startX + sideLen - 1;
+            plot1MaxY = startY + heightUp;
+            plot1MaxZ = startZ + sideLen - 1;
         } else {
             plot1Name = "Участок №1";
-            plot1MinX = -239.300; plot1MinY = 64.0; plot1MinZ = -63.525;
-            plot1MaxX = -229.458; plot1MaxY = 87.0; plot1MaxZ = -43.642;
+            plot1MinX = -239; plot1MinY = 64; plot1MinZ = -64;
+            plot1MaxX = -239; plot1MaxY = 87; plot1MaxZ = -64;
             plot1PricePerBlock = 32;
             plot1SurfaceBlocks = 1;
         }
