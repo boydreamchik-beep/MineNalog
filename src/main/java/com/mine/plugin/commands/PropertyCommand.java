@@ -496,6 +496,10 @@ public class PropertyCommand implements CommandExecutor, TabCompleter, Listener 
                     player.closeInventory();
                     String coords = pm.getPlotCoordinates(plotId);
                     TaxUtils.playSuccessSound(player);
+
+                    // Выдать достижение за покупку участка
+                    plugin.getAchievementManager().unlockLandlord(uuid);
+
                     player.sendMessage(Component.empty());
                     player.sendMessage(Component.text("╔══════════════════════════════════╗")
                             .color(NamedTextColor.GREEN));

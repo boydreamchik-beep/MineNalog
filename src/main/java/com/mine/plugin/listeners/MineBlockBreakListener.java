@@ -96,6 +96,9 @@ public class MineBlockBreakListener implements Listener {
             giveItem(player, playerMaterial, 1);
             plugin.getIncomeTracker().recordMined(uuid, 1);
 
+            // Проверка достижений за добычу
+            plugin.getAchievementManager().checkMining(uuid);
+
             if (brokenBlock != Material.COBBLESTONE && brokenBlock != playerMaterial) {
                 player.sendActionBar(Component.text(
                                 TaxUtils.getRussianName(brokenBlock) + " → Булыжник")

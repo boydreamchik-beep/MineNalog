@@ -25,6 +25,14 @@ commands:
     description: Имущество
     usage: /property
     permission: mine.property
+  top:
+    description: Таблицы лидеров
+    usage: /top <mine|tax|visit|ach> [кол-во]
+    permission: mine.top
+  ach:
+    description: Достижения
+    usage: /ach
+    permission: mine.achievements
   minereload:
     description: Перезагрузить конфиг
     usage: /minereload
@@ -42,6 +50,10 @@ permissions:
   mine.passport:
     default: true
   mine.property:
+    default: true
+  mine.top:
+    default: true
+  mine.achievements:
     default: true
   mine.admin:
     default: op

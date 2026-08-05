@@ -104,6 +104,9 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
                 CreditData data = cm.getCreditData(uuid);
                 int totalDebt = data != null ? data.amount : amount;
 
+                // Выдать достижение за первый кредит
+                plugin.getAchievementManager().unlockFirstCredit(uuid);
+
                 TaxUtils.playSuccessSound(player);
                 player.sendMessage(Component.empty());
                 player.sendMessage(Component.text("╔══════════════════════════════╗")
@@ -269,6 +272,9 @@ public class CreditCommand implements CommandExecutor, TabCompleter {
                 int remainingDebt = data != null ? data.amount : 0;
 
                 if (remainingDebt <= 0) {
+                    // Выдать достижение за погашение кредита
+                    plugin.getAchievementManager().unlockCreditPaid(uuid);
+
                     player.sendMessage(Component.empty());
                     player.sendMessage(Component.text("╔══════════════════════════════╗")
                             .color(NamedTextColor.GREEN));

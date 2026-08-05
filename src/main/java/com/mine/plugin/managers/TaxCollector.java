@@ -63,6 +63,9 @@ public class TaxCollector {
                 // Учёт
                 plugin.getIncomeTracker().recordAutoTax(player.getUniqueId(), actuallyRemoved);
 
+                // Проверка достижений за уплату налогов
+                plugin.getAchievementManager().checkTaxPaid(player.getUniqueId());
+
                 // Уведомление
                 TaxUtils.playNotificationSound(player);
                 player.sendMessage(Component.empty());

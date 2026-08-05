@@ -29,6 +29,7 @@ public class MinePlugin extends JavaPlugin {
     private PropertyManager propertyManager;
     private TaxCollector taxCollector;
     private NPCListener npcListener;
+    private AchievementManager achievementManager;
 
     @Override
     public void onEnable() {
@@ -55,6 +56,9 @@ public class MinePlugin extends JavaPlugin {
 
         propertyManager = new PropertyManager(this);
         propertyManager.load();
+
+        achievementManager = new AchievementManager(this);
+        achievementManager.load();
 
         taxTracker = new TaxTracker();
         freezeManager = new FreezeManager(this);
@@ -110,6 +114,13 @@ public class MinePlugin extends JavaPlugin {
         getCommand("property").setTabCompleter(propertyCommand);
         pm.registerEvents(propertyCommand, this);
 
+        TopCommand topCommand = new TopCommand(this);
+        getCommand("top").setExecutor(topCommand);
+        getCommand("top").setTabCompleter(topCommand);
+
+        AchievementCommand achievementCommand = new AchievementCommand(this);
+        getCommand("ach").setExecutor(achievementCommand);
+
         npcListener = new NPCListener(this, propertyCommand);
         pm.registerEvents(npcListener, this);
         npcListener.spawnNPC();
@@ -140,6 +151,10 @@ public class MinePlugin extends JavaPlugin {
             propertyManager.saveSync();
             propertyManager.stopTasks();
             propertyManager.stopAutoSave();
+        }
+        if (achievementManager != null) {
+            achievementManager.save();
+            achievementManager.stopAutoSave();
         }
         if (kaznaManager != null) kaznaManager.stopAutoSave();
         if (scoreboardManager != null) scoreboardManager.stop();
@@ -182,6 +197,7 @@ public class MinePlugin extends JavaPlugin {
     public IncomeTracker getIncomeTracker() { return incomeTracker; }
     public PropertyManager getPropertyManager() { return propertyManager; }
     public TaxCollector getTaxCollector() { return taxCollector; }
+    public AchievementManager getAchievementManager() { return achievementManager; }
 
     private static class ReloadCommand implements CommandExecutor {
         private final MinePlugin plugin;

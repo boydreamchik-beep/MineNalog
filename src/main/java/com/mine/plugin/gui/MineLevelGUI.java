@@ -208,6 +208,9 @@ public class MineLevelGUI implements Listener {
                     CompassListener.giveCompass(player);
                     plugin.getIncomeTracker().recordMineVisit(uuid);
 
+                    // Проверка достижений за посещение
+                    plugin.getAchievementManager().checkMineVisit(uuid);
+
                     TaxUtils.playTeleportSound(player);
                     player.sendMessage(Component.empty());
                     player.sendMessage(Component.text("==============================")
